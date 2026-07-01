@@ -194,9 +194,12 @@ static void test_stream_frame_queue_and_drop_count(void)
     CAMERA_TEST_ASSERT_EQ(camera_get_stream_dropped_count(instance, &dropped_count), CAMERA_OK);
     CAMERA_TEST_ASSERT_EQ(dropped_count, 0);
 
-    fake_emit_stream_frame(2, 0);
-    fake_emit_stream_frame(3, 1);
-    fake_emit_stream_frame(4, 0);
+    /* Fill the 4-slot queue to trigger a drop. */
+    fake_emit_stream_frame(2, 0);  /* count=1 */
+    fake_emit_stream_frame(3, 1);  /* count=2 */
+    fake_emit_stream_frame(4, 0);  /* count=3 */
+    fake_emit_stream_frame(5, 1);  /* count=4 (full) */
+    fake_emit_stream_frame(6, 0);  /* dropped */
     CAMERA_TEST_ASSERT_EQ(camera_get_stream_dropped_count(instance, &dropped_count), CAMERA_OK);
     CAMERA_TEST_ASSERT_EQ(dropped_count, 1);
 

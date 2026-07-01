@@ -960,40 +960,34 @@ static rt_err_t sensor_control(sensor_device_t *cam_dev, int cmd, void *args)
                 return -RT_EBUSY;
             }
             pixformat_t format = (pixformat_t)(rt_ubase_t)args;
-            pixformat_t old_format = cam_dev->pixformat;
             ret = sensor_set_pixformat(cam_dev, format);
             if (ret != 0)
             {
                 return -RT_ERROR;
             }
 
-
-            bus_capture_mode_t old_mode;
             bus_capture_mode_t new_mode;
-            if (!sensor_pixformat_to_bus_mode(old_format, &old_mode))
-            {
-                old_mode = g_hw_config.data_bus.default_mode;
-            }
             if (!sensor_pixformat_to_bus_mode(format, &new_mode))
             {
                 return -RT_EINVAL;
             }
 
-
-            if (old_mode != new_mode)
+            /*
+             * The DVP adapter starts in its configured default mode whenever
+             * the camera is opened. Synchronize it with every requested sensor
+             * format instead of relying on the zeroed sensor-format cache.
+             */
+            bus_adapter_stop(s_data_bus);
+            if (bus_adapter_set_mode(s_data_bus, new_mode) != BUS_OK)
             {
-                bus_adapter_stop(s_data_bus);
-                if (bus_adapter_set_mode(s_data_bus, new_mode) != BUS_OK)
-                {
-                    LOG_E("Failed to set bus mode");
-                    return -RT_ERROR;
-                }
-                ret = bus_adapter_start(s_data_bus);
-                if (ret != 0)
-                {
-                    LOG_E("Failed to restart bus after mode change");
-                    return -RT_ERROR;
-                }
+                LOG_E("Failed to set bus mode");
+                return -RT_ERROR;
+            }
+            ret = bus_adapter_start(s_data_bus);
+            if (ret != 0)
+            {
+                LOG_E("Failed to restart bus after mode change");
+                return -RT_ERROR;
             }
 
             return RT_EOK;

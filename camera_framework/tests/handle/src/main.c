@@ -180,11 +180,18 @@ static void test_stream_frame_queue_and_drop_count(void)
         .buffers = { stream_buffers[0], stream_buffers[1] },
         .buffer_size = sizeof(stream_buffers[0]),
     };
+    camera_capture_config_t capture_config =
+    {
+        .pixformat = PIXFORMAT_RGB565,
+        .framesize = FRAMESIZE_QVGA,
+        .quality = 10,
+    };
     camera_stream_frame_t frame;
     rt_uint32_t dropped_count = 0;
 
     fake_reset();
     CAMERA_TEST_ASSERT_EQ(camera_handler_instance_init(&instance), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(camera_change_settings(instance, &capture_config), CAMERA_OK);
     CAMERA_TEST_ASSERT_EQ(camera_start_stream(instance, &stream_config), CAMERA_OK);
 
     fake_emit_stream_frame(1, 0);
@@ -199,9 +206,18 @@ static void test_stream_frame_queue_and_drop_count(void)
     fake_emit_stream_frame(3, 1);  /* count=2 */
     fake_emit_stream_frame(4, 0);  /* count=3 */
     fake_emit_stream_frame(5, 1);  /* count=4 (full) */
-    fake_emit_stream_frame(6, 0);  /* dropped */
+    fake_emit_stream_frame(6, 0);  /* drop oldest frame (sequence 2) */
     CAMERA_TEST_ASSERT_EQ(camera_get_stream_dropped_count(instance, &dropped_count), CAMERA_OK);
     CAMERA_TEST_ASSERT_EQ(dropped_count, 1);
+
+    CAMERA_TEST_ASSERT_EQ(camera_get_stream_frame(instance, &frame, 0), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(frame.sequence, 3);
+    CAMERA_TEST_ASSERT_EQ(camera_get_stream_frame(instance, &frame, 0), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(frame.sequence, 4);
+    CAMERA_TEST_ASSERT_EQ(camera_get_stream_frame(instance, &frame, 0), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(frame.sequence, 5);
+    CAMERA_TEST_ASSERT_EQ(camera_get_stream_frame(instance, &frame, 0), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(frame.sequence, 6);
 
     CAMERA_TEST_ASSERT_EQ(camera_stop_stream(instance), CAMERA_OK);
     CAMERA_TEST_ASSERT_EQ(camera_get_stream_dropped_count(instance, &dropped_count), CAMERA_OK);

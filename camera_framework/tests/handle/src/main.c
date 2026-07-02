@@ -16,6 +16,7 @@ typedef struct
     framesize_t framesize;
     uint8_t quality;
     rt_bool_t fail_set_framesize;
+    rt_bool_t fail_stop_stream;
     camera_capture_done_callback_t async_callback;
     void *async_context;
     camera_stream_start_args_t last_stream_args;
@@ -136,6 +137,11 @@ static int fake_start_stream(const camera_stream_start_args_t *args)
 static int fake_stop_stream(void)
 {
     s_fake_state.stop_stream_calls++;
+    if (s_fake_state.fail_stop_stream)
+    {
+        return -RT_ERROR;
+    }
+
     memset(&s_fake_state.last_stream_args, 0, sizeof(s_fake_state.last_stream_args));
     return RT_EOK;
 }
@@ -394,6 +400,31 @@ static void test_stop_stream_is_idempotent(void)
     CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_OK);
 }
 
+static void test_stop_failure_preserves_stream_and_instance(void)
+{
+    camera_handler_instance_t *instance = RT_NULL;
+    rt_uint8_t stream_buffers[2][128];
+    camera_stream_config_t stream_config =
+    {
+        .buffers = { stream_buffers[0], stream_buffers[1] },
+        .buffer_size = sizeof(stream_buffers[0]),
+    };
+
+    fake_reset();
+    CAMERA_TEST_ASSERT_EQ(camera_handler_instance_init(&instance), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(camera_start_stream(instance, &stream_config), CAMERA_OK);
+    s_fake_state.fail_stop_stream = RT_TRUE;
+
+    CAMERA_TEST_ASSERT_EQ(camera_stop_stream(instance), CAMERA_ERROR);
+    CAMERA_TEST_ASSERT_TRUE(instance->stream.enabled);
+    CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_ERROR);
+    CAMERA_TEST_ASSERT_NOT_NULL(instance);
+
+    s_fake_state.fail_stop_stream = RT_FALSE;
+    CAMERA_TEST_ASSERT_EQ(camera_stop_stream(instance), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_OK);
+}
+
 static int run_camera_handle_tests(void)
 {
     static const camera_test_case_t cases[] =
@@ -406,6 +437,8 @@ static int run_camera_handle_tests(void)
           test_settings_cache_tracks_successful_partial_update },
         { "test_stream_frame_queue_and_drop_count", test_stream_frame_queue_and_drop_count },
         { "test_stop_stream_is_idempotent", test_stop_stream_is_idempotent },
+        { "test_stop_failure_preserves_stream_and_instance",
+          test_stop_failure_preserves_stream_and_instance },
     };
 
     return camera_test_run_suite("camera_handle", cases, sizeof(cases) / sizeof(cases[0]));

@@ -571,6 +571,7 @@ camera_handle_status_t camera_deinit(camera_handler_instance_t **instance)
 {
     camera_handle_status_t status = camera_api_lock();
     camera_handler_instance_t *handle;
+    rt_err_t result;
     if (status != CAMERA_OK)
     {
         return status;
@@ -592,12 +593,20 @@ camera_handle_status_t camera_deinit(camera_handler_instance_t **instance)
 
     if (handle->stream.enabled)
     {
-        if (camera_require_open(handle) == CAMERA_OK &&
-            handle->device_ops != RT_NULL &&
-            handle->device_ops->stop_stream != RT_NULL)
+        if (camera_require_open(handle) != CAMERA_OK ||
+            handle->device_ops->stop_stream == RT_NULL)
         {
-            handle->device_ops->stop_stream();
+            status = CAMERA_ERRORRESOURCE;
+            goto out;
         }
+
+        result = (rt_err_t)handle->device_ops->stop_stream();
+        if (result != RT_EOK)
+        {
+            status = camera_status_from_rt_err(result);
+            goto out;
+        }
+
         handle->stream.enabled = RT_FALSE;
         camera_stream_reset_queue(handle);
     }
@@ -1121,18 +1130,18 @@ camera_handle_status_t camera_stop_stream(camera_handler_instance_t *instance)
     }
 
     result = (rt_err_t)instance->device_ops->stop_stream();
+    if (result != RT_EOK)
+    {
+        status = camera_status_from_rt_err(result);
+        goto out;
+    }
+
     instance->stream.enabled = RT_FALSE;
     if (instance->stream.jpeg.parse_sem_initialized)
     {
         rt_sem_release(&instance->stream.jpeg.parse_sem);
     }
     camera_stream_reset_queue(instance);
-
-    if (result != RT_EOK)
-    {
-        status = camera_status_from_rt_err(result);
-        goto out;
-    }
 
     status = CAMERA_OK;
 

@@ -649,6 +649,7 @@ static void sensor_frame_ready_callback(void *buffer, uint32_t length, void *use
 static int sensor_open(void)
 {
     sensor_device_t *cam_dev = &s_device;
+    bus_adapter_config_t bus_config;
     int ret;
 
     if (s_is_open)
@@ -696,6 +697,16 @@ static int sensor_open(void)
         LOG_E("Data bus adapter '%s' type=%d is not supported by OV2640",
               g_hw_config.data_bus.name,
               (int)s_data_bus->type);
+        sccb_deinit();
+        s_data_bus = RT_NULL;
+        return -RT_ERROR;
+    }
+
+    bus_config.mode = g_hw_config.data_bus.default_mode;
+    ret = bus_adapter_config(s_data_bus, &bus_config);
+    if (ret != BUS_OK)
+    {
+        LOG_E("Bus adapter config failed: %d", ret);
         sccb_deinit();
         s_data_bus = RT_NULL;
         return -RT_ERROR;
@@ -1180,4 +1191,3 @@ static int sensor_stop_stream(void)
 
     return sensor_control(&s_device,CMD_STOP_STREAM,RT_NULL);
 }
-

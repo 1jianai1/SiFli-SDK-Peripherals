@@ -55,6 +55,7 @@
 #include "camera_driver_desc.h"
 #include "rtthread.h"
 #include "rthw.h"
+#include "ipc/workqueue.h"
 
 #ifdef CAMERA_HANDLE_TESTING
 static const camera_device_ops_t *s_camera_test_ops = RT_NULL;
@@ -89,8 +90,21 @@ static const camera_device_ops_t *camera_get_board_ops(void)
 static struct rt_mutex s_camera_api_lock;
 static volatile rt_uint8_t s_camera_api_lock_state = 0;
 
+typedef struct
+{
+    struct rt_work work;
+    camera_handler_instance_t *instance;
+    camera_handle_status_t status;
+    rt_size_t frame_size;
+    rt_bool_t initialized;
+    volatile rt_bool_t busy;
+} camera_async_completion_work_t;
+
+static camera_async_completion_work_t s_async_completion;
+
 static camera_handle_status_t camera_api_lock(void);
 static void camera_api_unlock(void);
+static void camera_async_completion_worker(struct rt_work *work, void *work_data);
 
 typedef enum
 {
@@ -242,6 +256,49 @@ static void camera_async_capture_reset(camera_handler_instance_t *instance)
     instance->async_capture.callback = RT_NULL;
     instance->async_capture.callback_context = RT_NULL;
     instance->async_capture.in_flight = RT_FALSE;
+    if (s_async_completion.instance == instance)
+    {
+        s_async_completion.instance = RT_NULL;
+        s_async_completion.busy = RT_FALSE;
+    }
+    rt_hw_interrupt_enable(level);
+}
+
+static void camera_async_completion_worker(struct rt_work *work, void *work_data)
+{
+    camera_handler_instance_t *instance;
+    camera_capture_done_callback_t callback;
+    void *callback_context;
+    camera_handle_status_t status;
+    rt_size_t frame_size;
+    rt_base_t level;
+
+    (void)work;
+    (void)work_data;
+
+    level = rt_hw_interrupt_disable();
+    instance = s_async_completion.instance;
+    status = s_async_completion.status;
+    frame_size = s_async_completion.frame_size;
+    callback = instance != RT_NULL ? instance->async_capture.callback : RT_NULL;
+    callback_context = instance != RT_NULL ?
+                       instance->async_capture.callback_context : RT_NULL;
+    if (instance != RT_NULL)
+    {
+        instance->async_capture.callback = RT_NULL;
+        instance->async_capture.callback_context = RT_NULL;
+        instance->async_capture.in_flight = RT_FALSE;
+    }
+    rt_hw_interrupt_enable(level);
+
+    if (callback != RT_NULL)
+    {
+        callback(callback_context, status, frame_size);
+    }
+
+    level = rt_hw_interrupt_disable();
+    s_async_completion.instance = RT_NULL;
+    s_async_completion.busy = RT_FALSE;
     rt_hw_interrupt_enable(level);
 }
 
@@ -250,8 +307,6 @@ static void camera_async_capture_done(void *context,
                                       rt_size_t frame_size)
 {
     camera_handler_instance_t *instance = (camera_handler_instance_t *)context;
-    camera_capture_done_callback_t callback;
-    void *callback_context;
     rt_base_t level;
 
     if (instance == RT_NULL)
@@ -260,16 +315,13 @@ static void camera_async_capture_done(void *context,
     }
 
     level = rt_hw_interrupt_disable();
-    callback = instance->async_capture.callback;
-    callback_context = instance->async_capture.callback_context;
-    instance->async_capture.callback = RT_NULL;
-    instance->async_capture.callback_context = RT_NULL;
-    instance->async_capture.in_flight = RT_FALSE;
+    s_async_completion.status = status;
+    s_async_completion.frame_size = frame_size;
     rt_hw_interrupt_enable(level);
 
-    if (callback != RT_NULL)
+    if (rt_work_submit(&s_async_completion.work, 0) != RT_EOK)
     {
-        callback(callback_context, status, frame_size);
+        camera_async_capture_reset(instance);
     }
 }
 
@@ -811,8 +863,22 @@ camera_handle_status_t camera_capture_single_async(
         goto out;
     }
 
+    if (!s_async_completion.initialized)
+    {
+        rt_work_init(&s_async_completion.work, camera_async_completion_worker, RT_NULL);
+        s_async_completion.initialized = RT_TRUE;
+    }
+
     {
         rt_base_t level = rt_hw_interrupt_disable();
+        if (s_async_completion.busy)
+        {
+            rt_hw_interrupt_enable(level);
+            status = CAMERA_ERRORRESOURCE;
+            goto out;
+        }
+        s_async_completion.busy = RT_TRUE;
+        s_async_completion.instance = instance;
         instance->async_capture.callback = callback;
         instance->async_capture.callback_context = context;
         instance->async_capture.in_flight = RT_TRUE;

@@ -67,6 +67,10 @@ typedef enum {
     BUS_CAPTURE_MODE_RGB565 = 3,  /* RGB565 fixed-size capture                      */
 } bus_capture_mode_t;
 
+typedef struct {
+    bus_capture_mode_t mode;
+} bus_adapter_config_t;
+
 /* Error codes returned by bus_adapter_* APIs.
  * Negative values represent errors; BUS_OK (0) means success. */
 typedef enum {
@@ -102,6 +106,7 @@ typedef void (*bus_frame_notify_callback_t)(void *buffer,
  * handle NULL gracefully (see bus_adapter_* helper wrappers below).
  */
 typedef struct bus_adapter_ops {
+    int (*config)(bus_adapter_t *self, const bus_adapter_config_t *config);
     int (*init)(bus_adapter_t *self);
     int (*deinit)(bus_adapter_t *self);
     int (*start)(bus_adapter_t *self);
@@ -157,6 +162,9 @@ bus_adapter_t *bus_adapter_find(const char *name);
 
 /** @brief Wrapper for init op. */
 int bus_adapter_init(bus_adapter_t *self);
+
+/** @brief Apply generic adapter configuration before initialization. */
+int bus_adapter_config(bus_adapter_t *self, const bus_adapter_config_t *config);
 
 /** @brief Wrapper for deinit op. */
 int bus_adapter_deinit(bus_adapter_t *self);

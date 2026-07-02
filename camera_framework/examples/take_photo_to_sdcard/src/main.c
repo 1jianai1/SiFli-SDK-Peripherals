@@ -256,6 +256,28 @@ static int ensure_photo_dir(void)
     return -RT_ERROR;
 }
 
+static int save_photo(const char *path, const void *buffer, rt_size_t size)
+{
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0);
+    if (fd < 0)
+    {
+        rt_kprintf("Failed to open %s for writing\n", path);
+        return -RT_ERROR;
+    }
+
+    int written = write(fd, buffer, size);
+    close(fd);
+    if (written != (int)size)
+    {
+        rt_kprintf("Write failed for %s (%d/%u bytes)\n",
+                   path, written, (unsigned int)size);
+        return -RT_ERROR;
+    }
+
+    rt_kprintf("Saved %s (%u bytes)\n", path, (unsigned int)size);
+    return RT_EOK;
+}
+
 /* ------------------------------------------------------------------ *
  * MSH command: take_photo
  * ------------------------------------------------------------------ */
@@ -398,24 +420,7 @@ void take_photo(int argc, char **argv)
         char file_path[64];
         rt_snprintf(file_path, sizeof(file_path),
                     "%s/photo_%03d.jpg", PHOTO_DIR, photo_idx + 1);
-        int fd = open(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0);
-        if (fd < 0)
-        {
-            rt_kprintf("Failed to open %s for writing\n", file_path);
-            continue;
-        }
-
-        int written = write(fd, buffer, req.frame_size);
-        close(fd);
-        if (written != (int)req.frame_size)
-        {
-            rt_kprintf("Write failed for %s (%d/%u bytes)\n",
-                       file_path, written, (unsigned int)req.frame_size);
-            continue;
-        }
-
-        rt_kprintf("Saved %s (%u bytes)\n", file_path,
-                   (unsigned int)req.frame_size);
+        save_photo(file_path, buffer, req.frame_size);
     }
 
     psram_heap_free(buffer);
@@ -429,6 +434,137 @@ close_camera:
     }
 }
 MSH_CMD_EXPORT(take_photo, Capture JPEG photo(s) using ov2640 and save to SD card);
+
+typedef struct
+{
+    camera_handler_instance_t *camera;
+    uint8_t *buffer;
+    volatile rt_bool_t busy;
+} async_photo_context_t;
+
+static async_photo_context_t s_async_photo;
+
+static void take_photo_async_done(void *context,
+                                  camera_handle_status_t status,
+                                  rt_size_t frame_size)
+{
+    async_photo_context_t *photo = (async_photo_context_t *)context;
+
+    if (status == CAMERA_OK && frame_size != 0)
+    {
+        if (ensure_photo_dir() == RT_EOK)
+        {
+            save_photo(PHOTO_DIR "/async_photo.jpg", photo->buffer, frame_size);
+        }
+        else
+        {
+            rt_kprintf("Async capture succeeded, but %s is unavailable\n", PHOTO_DIR);
+        }
+    }
+    else
+    {
+        rt_kprintf("Async capture failed (status=%d, size=%u)\n",
+                   status, (unsigned int)frame_size);
+    }
+
+    camera_deinit(&photo->camera);
+    psram_heap_free(photo->buffer);
+    photo->buffer = RT_NULL;
+    photo->busy = RT_FALSE;
+    rt_kprintf("Async capture complete\n");
+}
+
+void take_photo_async(int argc, char **argv)
+{
+    const camera_capabilities_t *caps = RT_NULL;
+    camera_capture_config_t cfg;
+    camera_capture_request_t req;
+    camera_handle_status_t status;
+    framesize_t framesize;
+    rt_size_t buffer_size;
+    int quality;
+
+    if (argc != 3)
+    {
+        rt_kprintf("Usage: take_photo_async <framesize> <quality>\n");
+        return;
+    }
+    if (s_async_photo.busy)
+    {
+        rt_kprintf("Async capture already in progress\n");
+        return;
+    }
+
+    framesize = format_string_to_framesize(argv[1]);
+    quality = atoi(argv[2]);
+    if (framesize == FRAMESIZE_INVALID || quality < 0 || quality > 63)
+    {
+        rt_kprintf("Invalid framesize or quality (0..63)\n");
+        return;
+    }
+    s_async_photo.busy = RT_TRUE;
+    status = camera_handler_instance_init(&s_async_photo.camera);
+    if (status != CAMERA_OK)
+    {
+        rt_kprintf("Failed to initialize camera handler (%d)\n", status);
+        goto fail;
+    }
+
+    status = camera_get_capabilities(s_async_photo.camera, &caps);
+    if (status != CAMERA_OK || caps == RT_NULL ||
+        !caps_has_pixformat(caps, PIXFORMAT_JPEG) ||
+        !caps_has_framesize(caps, framesize))
+    {
+        rt_kprintf("Camera does not support requested JPEG mode\n");
+        goto fail;
+    }
+
+    cfg.pixformat = PIXFORMAT_JPEG;
+    cfg.framesize = framesize;
+    cfg.quality = (uint8_t)quality;
+    status = camera_change_settings(s_async_photo.camera, &cfg);
+    if (status != CAMERA_OK)
+    {
+        rt_kprintf("Failed to configure camera (%d)\n", status);
+        goto fail;
+    }
+
+    buffer_size = calc_jpeg_buffer_size(framesize);
+    s_async_photo.buffer = psram_heap_malloc(buffer_size);
+    if (s_async_photo.buffer == RT_NULL)
+    {
+        rt_kprintf("Failed to allocate %u bytes\n", (unsigned int)buffer_size);
+        goto fail;
+    }
+
+    req.buffer = s_async_photo.buffer;
+    req.buffer_size = buffer_size;
+    req.frame_size = 0;
+    status = camera_capture_single_async(s_async_photo.camera, &req,
+                                         take_photo_async_done, &s_async_photo);
+    if (status != CAMERA_OK)
+    {
+        rt_kprintf("Failed to start async capture (%d)\n", status);
+        goto fail;
+    }
+
+    rt_kprintf("Async capture started; result will be saved to %s/async_photo.jpg\n",
+               PHOTO_DIR);
+    return;
+
+fail:
+    if (s_async_photo.camera != RT_NULL)
+    {
+        camera_deinit(&s_async_photo.camera);
+    }
+    if (s_async_photo.buffer != RT_NULL)
+    {
+        psram_heap_free(s_async_photo.buffer);
+        s_async_photo.buffer = RT_NULL;
+    }
+    s_async_photo.busy = RT_FALSE;
+}
+MSH_CMD_EXPORT(take_photo_async, Capture one JPEG asynchronously and save to SD card);
 
 /**
  * @brief Program entry point: initialize the PSRAM heap, mount the SD card

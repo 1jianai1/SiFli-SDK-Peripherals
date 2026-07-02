@@ -81,6 +81,16 @@ static int bus_adapter_check(bus_adapter_t *self)
     return BUS_OK;
 }
 
+/** @brief Wrapper for generic config op. */
+int bus_adapter_config(bus_adapter_t *self, const bus_adapter_config_t *config)
+{
+    if (bus_adapter_check(self) != BUS_OK || config == NULL)
+        return BUS_ERR_INVALID;
+    if (!self->ops->config)
+        return BUS_ERR_NOT_SUPPORTED;
+    return self->ops->config(self, config);
+}
+
 /** @brief Wrapper for init op. */
 int bus_adapter_init(bus_adapter_t *self)
 {

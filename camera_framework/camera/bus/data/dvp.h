@@ -144,8 +144,8 @@ struct dvp_handle{
 /** @brief Initialize DVP backend. */
 int dvp_init(bus_adapter_t *self);
 
-/** @brief Apply DVP config to singleton handle. */
-int dvp_apply_config(bus_adapter_t *self, const dvp_config_t *config);
+/** @brief Apply generic bus configuration to DVP state. */
+int dvp_configure(bus_adapter_t *self, const bus_adapter_config_t *config);
 
 /** @brief Deinitialize DVP interface. */
 int dvp_deinit(bus_adapter_t *self);

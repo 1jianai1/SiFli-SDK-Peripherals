@@ -783,20 +783,18 @@ int dvp_init(bus_adapter_t *self)
     return RT_EOK;
 }
 
-/** @brief Copy caller DVP config into singleton handle. */
-int dvp_apply_config(bus_adapter_t *self, const dvp_config_t *config)
+/** @brief Apply generic bus configuration before DVP initialization. */
+int dvp_configure(bus_adapter_t *self, const bus_adapter_config_t *config)
 {
     dvp_handle_t *handle;
 
-    if (self == RT_NULL || self->priv == RT_NULL)
-        return -RT_EINVAL;
-
-    if (dvp_validate_config(config) != RT_EOK)
-        return -RT_EINVAL;
+    if (self == RT_NULL || self->priv == RT_NULL || config == RT_NULL ||
+        config->mode > BUS_CAPTURE_MODE_RGB565)
+        return BUS_ERR_INVALID;
 
     handle = (dvp_handle_t *)self->priv;
-    memcpy(&handle->config, config, sizeof(*config));
-    return RT_EOK;
+    handle->config.mode = config->mode;
+    return BUS_OK;
 }
 
 /** @brief Deinitialize DVP backend and hardware resources. */
@@ -1137,6 +1135,7 @@ void dvp_dump_state(bus_adapter_t *self)
 #endif
 
 static const bus_adapter_ops_t s_dvp_bus_ops = {
+    .config             = dvp_configure,
     .init               = dvp_init,
     .deinit             = dvp_deinit,
     .start              = dvp_start,

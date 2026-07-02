@@ -227,6 +227,8 @@ typedef struct
     int calls;
     camera_handle_status_t status;
     rt_size_t frame_size;
+    rt_thread_t callback_thread;
+    struct rt_semaphore done_sem;
 } async_test_result_t;
 
 static void test_async_capture_done(void *context,
@@ -238,6 +240,8 @@ static void test_async_capture_done(void *context,
     result->calls++;
     result->status = status;
     result->frame_size = frame_size;
+    result->callback_thread = rt_thread_self();
+    rt_sem_release(&result->done_sem);
 }
 
 static void test_async_capture_blocks_conflicting_operations(void)
@@ -270,8 +274,12 @@ static void test_async_capture_blocks_conflicting_operations(void)
         .buffer_size = sizeof(stream_buffers[0]),
     };
     async_test_result_t async_result = {0};
+    rt_thread_t caller_thread;
 
     fake_reset();
+    CAMERA_TEST_ASSERT_EQ(rt_sem_init(&async_result.done_sem, "async_t", 0,
+                                     RT_IPC_FLAG_FIFO), RT_EOK);
+    caller_thread = rt_thread_self();
     CAMERA_TEST_ASSERT_EQ(camera_handler_instance_init(&instance), CAMERA_OK);
     CAMERA_TEST_ASSERT_EQ(
         camera_capture_single_async(instance,
@@ -294,12 +302,16 @@ static void test_async_capture_blocks_conflicting_operations(void)
     CAMERA_TEST_ASSERT_NOT_NULL(instance);
 
     fake_complete_async(CAMERA_OK, 7);
+    CAMERA_TEST_ASSERT_EQ(rt_sem_take(&async_result.done_sem,
+                                     rt_tick_from_millisecond(1000)), RT_EOK);
     CAMERA_TEST_ASSERT_EQ(async_result.calls, 1);
     CAMERA_TEST_ASSERT_EQ(async_result.status, CAMERA_OK);
     CAMERA_TEST_ASSERT_EQ(async_result.frame_size, 7);
+    CAMERA_TEST_ASSERT_TRUE(async_result.callback_thread != caller_thread);
 
     CAMERA_TEST_ASSERT_EQ(camera_change_settings(instance, &capture_config), CAMERA_OK);
     CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(rt_sem_detach(&async_result.done_sem), RT_EOK);
 }
 
 static void test_settings_cache_tracks_successful_partial_update(void)

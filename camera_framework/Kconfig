@@ -1,6 +1,7 @@
 menuconfig CAMERA_FRAMEWORK_ENABLE
     bool "Camera drivers"
     default y
+    select RT_USING_SYSTEM_WORKQUEUE
     help
       Enable the camera framework, including the handle layer, sensor driver
       selection, control-bus settings, and data-bus backend settings.

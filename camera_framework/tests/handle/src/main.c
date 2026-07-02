@@ -12,6 +12,10 @@ typedef struct
     int capture_async_calls;
     int start_stream_calls;
     int stop_stream_calls;
+    pixformat_t pixformat;
+    framesize_t framesize;
+    uint8_t quality;
+    rt_bool_t fail_set_framesize;
     camera_capture_done_callback_t async_callback;
     void *async_context;
     camera_stream_start_args_t last_stream_args;
@@ -33,6 +37,9 @@ static const camera_capabilities_t s_fake_caps =
 static int fake_open(void)
 {
     s_fake_state.open_calls++;
+    s_fake_state.pixformat = PIXFORMAT_JPEG;
+    s_fake_state.framesize = FRAMESIZE_VGA;
+    s_fake_state.quality = 10;
     return RT_EOK;
 }
 
@@ -44,17 +51,39 @@ static int fake_close(void)
 
 static int fake_set_pixformat(pixformat_t pixformat)
 {
-    return pixformat == PIXFORMAT_INVALID ? -RT_EINVAL : RT_EOK;
+    if (pixformat == PIXFORMAT_INVALID)
+    {
+        return -RT_EINVAL;
+    }
+
+    s_fake_state.pixformat = pixformat;
+    return RT_EOK;
 }
 
 static int fake_set_framesize(framesize_t framesize)
 {
-    return framesize == FRAMESIZE_INVALID ? -RT_EINVAL : RT_EOK;
+    if (framesize == FRAMESIZE_INVALID)
+    {
+        return -RT_EINVAL;
+    }
+    if (s_fake_state.fail_set_framesize)
+    {
+        return -RT_ERROR;
+    }
+
+    s_fake_state.framesize = framesize;
+    return RT_EOK;
 }
 
 static int fake_set_quality(uint8_t quality)
 {
-    return quality > 63 ? -RT_EINVAL : RT_EOK;
+    if (quality > 63)
+    {
+        return -RT_EINVAL;
+    }
+
+    s_fake_state.quality = quality;
+    return RT_EOK;
 }
 
 static rt_size_t fake_capture(void *buffer, rt_size_t buffer_size)
@@ -267,6 +296,31 @@ static void test_async_capture_blocks_conflicting_operations(void)
     CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_OK);
 }
 
+static void test_settings_cache_tracks_successful_partial_update(void)
+{
+    camera_handler_instance_t *instance = RT_NULL;
+    camera_capture_config_t capture_config =
+    {
+        .pixformat = PIXFORMAT_RGB565,
+        .framesize = FRAMESIZE_QVGA,
+        .quality = 20,
+    };
+
+    fake_reset();
+    CAMERA_TEST_ASSERT_EQ(camera_handler_instance_init(&instance), CAMERA_OK);
+    s_fake_state.fail_set_framesize = RT_TRUE;
+
+    CAMERA_TEST_ASSERT_EQ(camera_change_settings(instance, &capture_config), CAMERA_ERROR);
+    CAMERA_TEST_ASSERT_EQ(s_fake_state.pixformat, PIXFORMAT_RGB565);
+    CAMERA_TEST_ASSERT_EQ(s_fake_state.framesize, FRAMESIZE_VGA);
+    CAMERA_TEST_ASSERT_EQ(s_fake_state.quality, 10);
+    CAMERA_TEST_ASSERT_EQ(instance->active_config.pixformat, s_fake_state.pixformat);
+    CAMERA_TEST_ASSERT_EQ(instance->active_config.framesize, s_fake_state.framesize);
+    CAMERA_TEST_ASSERT_EQ(instance->active_config.quality, s_fake_state.quality);
+
+    CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_OK);
+}
+
 static void test_stream_frame_queue_and_drop_count(void)
 {
     camera_handler_instance_t *instance = RT_NULL;
@@ -348,6 +402,8 @@ static int run_camera_handle_tests(void)
         { "test_capture_rejected_while_streaming", test_capture_rejected_while_streaming },
         { "test_async_capture_blocks_conflicting_operations",
           test_async_capture_blocks_conflicting_operations },
+        { "test_settings_cache_tracks_successful_partial_update",
+          test_settings_cache_tracks_successful_partial_update },
         { "test_stream_frame_queue_and_drop_count", test_stream_frame_queue_and_drop_count },
         { "test_stop_stream_is_idempotent", test_stop_stream_is_idempotent },
     };

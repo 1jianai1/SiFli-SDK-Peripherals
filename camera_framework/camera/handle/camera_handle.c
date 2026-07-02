@@ -703,6 +703,7 @@ camera_handle_status_t camera_change_settings(camera_handler_instance_t *instanc
         status = camera_status_from_rt_err(result);
         goto out;
     }
+    instance->active_config.pixformat = config->pixformat;
 
     result = (rt_err_t)device_ops->set_framesize(config->framesize);
     if (result != RT_EOK)
@@ -710,6 +711,7 @@ camera_handle_status_t camera_change_settings(camera_handler_instance_t *instanc
         status = camera_status_from_rt_err(result);
         goto out;
     }
+    instance->active_config.framesize = config->framesize;
 
     result = (rt_err_t)device_ops->set_quality(config->quality);
     if (result != RT_EOK)
@@ -717,8 +719,8 @@ camera_handle_status_t camera_change_settings(camera_handler_instance_t *instanc
         status = camera_status_from_rt_err(result);
         goto out;
     }
+    instance->active_config.quality = config->quality;
 
-    instance->active_config = *config;
     status = CAMERA_OK;
 
 out:
@@ -1138,4 +1140,3 @@ out:
     camera_api_unlock();
     return status;
 }
-

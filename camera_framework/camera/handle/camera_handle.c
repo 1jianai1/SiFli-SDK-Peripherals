@@ -236,6 +236,43 @@ static void camera_stream_reset_queue(camera_handler_instance_t *instance)
     rt_hw_interrupt_enable(level);
 }
 
+static void camera_async_capture_reset(camera_handler_instance_t *instance)
+{
+    rt_base_t level = rt_hw_interrupt_disable();
+    instance->async_capture.callback = RT_NULL;
+    instance->async_capture.callback_context = RT_NULL;
+    instance->async_capture.in_flight = RT_FALSE;
+    rt_hw_interrupt_enable(level);
+}
+
+static void camera_async_capture_done(void *context,
+                                      camera_handle_status_t status,
+                                      rt_size_t frame_size)
+{
+    camera_handler_instance_t *instance = (camera_handler_instance_t *)context;
+    camera_capture_done_callback_t callback;
+    void *callback_context;
+    rt_base_t level;
+
+    if (instance == RT_NULL)
+    {
+        return;
+    }
+
+    level = rt_hw_interrupt_disable();
+    callback = instance->async_capture.callback;
+    callback_context = instance->async_capture.callback_context;
+    instance->async_capture.callback = RT_NULL;
+    instance->async_capture.callback_context = RT_NULL;
+    instance->async_capture.in_flight = RT_FALSE;
+    rt_hw_interrupt_enable(level);
+
+    if (callback != RT_NULL)
+    {
+        callback(callback_context, status, frame_size);
+    }
+}
+
 static void camera_stream_enqueue_ready_frame(camera_handler_instance_t *instance,
                                               const camera_stream_frame_t *frame)
 {
@@ -547,6 +584,12 @@ camera_handle_status_t camera_deinit(camera_handler_instance_t **instance)
 
     handle = *instance;
 
+    if (handle->async_capture.in_flight)
+    {
+        status = CAMERA_ERRORRESOURCE;
+        goto out;
+    }
+
     if (handle->stream.enabled)
     {
         if (camera_require_open(handle) == CAMERA_OK &&
@@ -639,7 +682,7 @@ camera_handle_status_t camera_change_settings(camera_handler_instance_t *instanc
         goto out;
     }
 
-    if (instance->stream.enabled)
+    if (instance->async_capture.in_flight || instance->stream.enabled)
     {
         status = CAMERA_ERRORRESOURCE;
         goto out;
@@ -751,18 +794,27 @@ camera_handle_status_t camera_capture_single_async(
         goto out;
     }
 
-    if (instance->stream.enabled)
+    if (instance->async_capture.in_flight || instance->stream.enabled)
     {
         status = CAMERA_ERRORRESOURCE;
         goto out;
     }
 
+    {
+        rt_base_t level = rt_hw_interrupt_disable();
+        instance->async_capture.callback = callback;
+        instance->async_capture.callback_context = context;
+        instance->async_capture.in_flight = RT_TRUE;
+        rt_hw_interrupt_enable(level);
+    }
+
     result = (rt_err_t)instance->device_ops->capture_async(request->buffer,
                                                            request->buffer_size,
-                                                           callback,
-                                                           context);
+                                                           camera_async_capture_done,
+                                                           instance);
     if (result != RT_EOK)
     {
+        camera_async_capture_reset(instance);
         status = camera_status_from_rt_err(result);
         goto out;
     }
@@ -807,7 +859,7 @@ camera_handle_status_t camera_capture_single(camera_handler_instance_t *instance
         goto out;
     }
 
-    if (instance->stream.enabled)
+    if (instance->async_capture.in_flight || instance->stream.enabled)
     {
         status = CAMERA_ERRORRESOURCE;
         goto out;
@@ -878,7 +930,7 @@ camera_handle_status_t camera_start_stream(camera_handler_instance_t *instance,
         goto out;
     }
 
-    if (instance->stream.enabled)
+    if (instance->async_capture.in_flight || instance->stream.enabled)
     {
         status = CAMERA_ERRORRESOURCE;
         goto out;
@@ -1086,5 +1138,4 @@ out:
     camera_api_unlock();
     return status;
 }
-
 

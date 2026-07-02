@@ -162,7 +162,12 @@ camera_handle_status_t camera_handler_instance_init(
 camera_handle_status_t camera_capture_single(camera_handler_instance_t *instance,
                                              camera_capture_request_t *request);
 
-/** @brief Non-blocking single-shot capture. */
+/**
+ * @brief Start a non-blocking single-shot capture.
+ *
+ * Conflicting capture, configuration, stream-start and deinit operations
+ * return CAMERA_ERRORRESOURCE until the completion callback runs.
+ */
 camera_handle_status_t camera_capture_single_async(
     camera_handler_instance_t         *instance,
     camera_capture_request_t          *request,

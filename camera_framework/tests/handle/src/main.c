@@ -9,8 +9,11 @@ typedef struct
     int open_calls;
     int close_calls;
     int capture_calls;
+    int capture_async_calls;
     int start_stream_calls;
     int stop_stream_calls;
+    camera_capture_done_callback_t async_callback;
+    void *async_context;
     camera_stream_start_args_t last_stream_args;
 } fake_camera_state_t;
 
@@ -76,9 +79,22 @@ static int fake_capture_async(void *buffer,
         return -RT_EINVAL;
     }
 
+    s_fake_state.capture_async_calls++;
     ((rt_uint8_t *)buffer)[0] = 0xA5;
-    callback(context, CAMERA_OK, 1);
+    s_fake_state.async_callback = callback;
+    s_fake_state.async_context = context;
     return RT_EOK;
+}
+
+static void fake_complete_async(camera_handle_status_t status, rt_size_t frame_size)
+{
+    camera_capture_done_callback_t callback = s_fake_state.async_callback;
+    void *context = s_fake_state.async_context;
+
+    CAMERA_TEST_ASSERT_NOT_NULL(callback);
+    s_fake_state.async_callback = RT_NULL;
+    s_fake_state.async_context = RT_NULL;
+    callback(context, status, frame_size);
 }
 
 static int fake_start_stream(const camera_stream_start_args_t *args)
@@ -171,6 +187,86 @@ static void test_capture_rejected_while_streaming(void)
     CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_OK);
 }
 
+typedef struct
+{
+    int calls;
+    camera_handle_status_t status;
+    rt_size_t frame_size;
+} async_test_result_t;
+
+static void test_async_capture_done(void *context,
+                                    camera_handle_status_t status,
+                                    rt_size_t frame_size)
+{
+    async_test_result_t *result = (async_test_result_t *)context;
+
+    result->calls++;
+    result->status = status;
+    result->frame_size = frame_size;
+}
+
+static void test_async_capture_blocks_conflicting_operations(void)
+{
+    camera_handler_instance_t *instance = RT_NULL;
+    rt_uint8_t async_buffer[32];
+    rt_uint8_t sync_buffer[32];
+    rt_uint8_t stream_buffers[2][128];
+    camera_capture_request_t async_request =
+    {
+        .buffer = async_buffer,
+        .buffer_size = sizeof(async_buffer),
+        .frame_size = 0,
+    };
+    camera_capture_request_t sync_request =
+    {
+        .buffer = sync_buffer,
+        .buffer_size = sizeof(sync_buffer),
+        .frame_size = 0,
+    };
+    camera_capture_config_t capture_config =
+    {
+        .pixformat = PIXFORMAT_RGB565,
+        .framesize = FRAMESIZE_QVGA,
+        .quality = 10,
+    };
+    camera_stream_config_t stream_config =
+    {
+        .buffers = { stream_buffers[0], stream_buffers[1] },
+        .buffer_size = sizeof(stream_buffers[0]),
+    };
+    async_test_result_t async_result = {0};
+
+    fake_reset();
+    CAMERA_TEST_ASSERT_EQ(camera_handler_instance_init(&instance), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(
+        camera_capture_single_async(instance,
+                                    &async_request,
+                                    test_async_capture_done,
+                                    &async_result),
+        CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(s_fake_state.capture_async_calls, 1);
+
+    CAMERA_TEST_ASSERT_EQ(
+        camera_capture_single_async(instance,
+                                    &async_request,
+                                    test_async_capture_done,
+                                    &async_result),
+        CAMERA_ERRORRESOURCE);
+    CAMERA_TEST_ASSERT_EQ(camera_capture_single(instance, &sync_request), CAMERA_ERRORRESOURCE);
+    CAMERA_TEST_ASSERT_EQ(camera_change_settings(instance, &capture_config), CAMERA_ERRORRESOURCE);
+    CAMERA_TEST_ASSERT_EQ(camera_start_stream(instance, &stream_config), CAMERA_ERRORRESOURCE);
+    CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_ERRORRESOURCE);
+    CAMERA_TEST_ASSERT_NOT_NULL(instance);
+
+    fake_complete_async(CAMERA_OK, 7);
+    CAMERA_TEST_ASSERT_EQ(async_result.calls, 1);
+    CAMERA_TEST_ASSERT_EQ(async_result.status, CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(async_result.frame_size, 7);
+
+    CAMERA_TEST_ASSERT_EQ(camera_change_settings(instance, &capture_config), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_OK);
+}
+
 static void test_stream_frame_queue_and_drop_count(void)
 {
     camera_handler_instance_t *instance = RT_NULL;
@@ -250,6 +346,8 @@ static int run_camera_handle_tests(void)
     {
         { "test_handle_init_and_deinit", test_handle_init_and_deinit },
         { "test_capture_rejected_while_streaming", test_capture_rejected_while_streaming },
+        { "test_async_capture_blocks_conflicting_operations",
+          test_async_capture_blocks_conflicting_operations },
         { "test_stream_frame_queue_and_drop_count", test_stream_frame_queue_and_drop_count },
         { "test_stop_stream_is_idempotent", test_stop_stream_is_idempotent },
     };

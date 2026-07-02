@@ -86,10 +86,18 @@ typedef struct
   camera_jpeg_stream_runtime_t jpeg;
 } camera_stream_runtime_t;
 
+typedef struct
+{
+  camera_capture_done_callback_t callback;
+  void *callback_context;
+  volatile rt_bool_t in_flight;
+} camera_async_capture_runtime_t;
+
 struct camera_handler_instance
 {
   camera_capture_config_t active_config;
   camera_stream_runtime_t stream;
+  camera_async_capture_runtime_t async_capture;
   const camera_device_ops_t *device_ops;
   rt_bool_t is_open;
 };

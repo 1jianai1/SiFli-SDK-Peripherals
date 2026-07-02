@@ -20,6 +20,7 @@
 #include "rtconfig.h"
 #include "../../handle/camera_handle_internal.h"
 #include "data_bus_adapter.h"
+#include "ov2640_jpeg_assembler.h"
 
 #define OV2640_ADDR 0x30  /* 7-bit I2C/SCCB slave address */
 
@@ -56,6 +57,7 @@ typedef struct {
     struct rt_semaphore             frame_sem;      /* posted by frame callback, consumed by capture path */
     sensor_stream_state_t           stream;         /* streaming state (inactive for single-shot capture) */
     sensor_async_capture_state_t    async_capture;  /* non-blocking single-shot state */
+    ov2640_jpeg_assembler_t         jpeg_single;    /* JPEG single-shot segment assembler */
     rt_uint8_t                      current_bank;   /* cached BANK_SEL value; ov2640_bank_t cast at use site */
 } sensor_device_t;
 

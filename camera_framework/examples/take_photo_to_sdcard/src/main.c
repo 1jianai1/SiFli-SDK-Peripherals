@@ -458,7 +458,8 @@ static void take_photo_async_done(void *context,
         }
         else
         {
-            rt_kprintf("Async capture succeeded, but %s is unavailable\n", PHOTO_DIR);
+            rt_kprintf("Async capture succeeded (%u bytes), but %s is unavailable\n",
+                       (unsigned int)frame_size, PHOTO_DIR);
         }
     }
     else

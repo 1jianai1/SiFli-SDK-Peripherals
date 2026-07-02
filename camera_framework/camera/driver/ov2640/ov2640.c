@@ -566,11 +566,11 @@ static void sensor_frame_ready_callback(void *buffer, uint32_t length, void *use
     sensor_device_t *cam_dev = (sensor_device_t *)user;
     sensor_stream_state_t *stream = &cam_dev->stream;
     rt_size_t frame_size = (buffer != RT_NULL) ? length : 0;
+    ov2640_jpeg_result_t jpeg_result;
     camera_capture_done_callback_t async_callback = RT_NULL;
     void *async_context = RT_NULL;
 
     rt_base_t level = rt_hw_interrupt_disable();
-    cam_dev->last_frame_size = frame_size;
     camera_stream_frame_callback_t frame_callback = stream->frame_callback;
     void *callback_context = stream->callback_context;
     rt_hw_interrupt_enable(level);
@@ -615,8 +615,22 @@ static void sensor_frame_ready_callback(void *buffer, uint32_t length, void *use
         return;
     }
 
+    if (cam_dev->pixformat == PIXFORMAT_JPEG)
+    {
+        jpeg_result = ov2640_jpeg_assembler_feed(&cam_dev->jpeg_single,
+                                                 (const uint8_t *)buffer,
+                                                 length);
+        if (jpeg_result == OV2640_JPEG_INCOMPLETE)
+        {
+            return;
+        }
+        frame_size = (jpeg_result == OV2640_JPEG_COMPLETE) ?
+                     cam_dev->jpeg_single.frame_size : 0;
+    }
+
     
     level = rt_hw_interrupt_disable();
+    cam_dev->last_frame_size = frame_size;
     async_callback = cam_dev->async_capture.callback;
     async_context = cam_dev->async_capture.context;
     cam_dev->async_capture.callback = RT_NULL;
@@ -823,6 +837,11 @@ static rt_size_t sensor_capture(void *buffer, rt_size_t size)
 
     while (rt_sem_trytake(&cam_dev->frame_sem) == RT_EOK);
     cam_dev->last_frame_size = 0;
+    if (cam_dev->pixformat == PIXFORMAT_JPEG)
+    {
+        ov2640_jpeg_assembler_reset(&cam_dev->jpeg_single,
+                                    (uint8_t *)buffer, size);
+    }
     
 #if OV2640_ENABLE_CAPTURE_TIMEOUT
     start_tick = rt_tick_get();
@@ -889,6 +908,12 @@ static int sensor_capture_async(void *buffer,
     cam_dev->async_capture.context = context;
     cam_dev->async_capture.in_flight = RT_TRUE;
     rt_hw_interrupt_enable(level);
+
+    if (cam_dev->pixformat == PIXFORMAT_JPEG)
+    {
+        ov2640_jpeg_assembler_reset(&cam_dev->jpeg_single,
+                                    (uint8_t *)buffer, size);
+    }
 
     result = (rt_err_t)bus_adapter_start_capture(s_data_bus, buffer, size);
     if (result != RT_EOK)

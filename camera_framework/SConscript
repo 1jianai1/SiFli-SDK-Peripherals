@@ -2,10 +2,31 @@ from building import *
 
 # keep current working dir
 cwd = GetCurrentDir()
-# collect sources under camera (support nested driver subdirs)
-src = Glob('./camera/*.c') + Glob('./camera/*/*.c') + Glob('./camera/*/*/*.c') + Glob('./camera/*/*/*/*.c')
-# include paths: camera root, camera/include, and specific ov2640 driver headers
-include = ['./camera', './camera/bus/control', './camera/driver', './camera/driver/ov2640', './camera/bus/data', './camera/handle']
+# Collect common framework sources, one data backend and one sensor.
+src = (Glob('./camera/*.c') +
+       Glob('./camera/bus/control/*.c') +
+       ['./camera/bus/data/data_bus_adapter.c',
+        './camera/bus/data/camera_xclk.c',
+        './camera/bus/data/camera_xclk_calc.c'] +
+       Glob('./camera/driver/*.c') +
+       Glob('./camera/handle/*.c'))
+include = ['./camera', './camera/bus/control', './camera/driver', './camera/bus/data', './camera/handle']
+
+if GetDepend('CAMERA_USING_DVP'):
+    src += ['./camera/bus/data/dvp.c']
+elif GetDepend('CAMERA_USING_SERIAL'):
+    src += ['./camera/bus/data/camera_serial.c',
+            './camera/bus/data/camera_serial_decoder.c',
+            './camera/bus/data/camera_serial_hw.c',
+            './camera/bus/data/camera_serial_packer.c']
+
+if GetDepend('SENSOR_USING_OV2640'):
+    src += Glob('./camera/driver/ov2640/*.c')
+    include += ['./camera/driver/ov2640']
+elif GetDepend('SENSOR_USING_GC032A'):
+    src += Glob('./camera/driver/gc032a/*.c')
+    include += ['./camera/driver/gc032a']
+
 group = DefineGroup('Drivers', src, depend = ['CAMERA_FRAMEWORK_ENABLE'], CPPPATH = include, LIBPATH = include)
 
 Return('group')

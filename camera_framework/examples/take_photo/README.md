@@ -14,6 +14,11 @@
 msh> take_photo <framesize> <count>
 ```
 
+## 选择摄像头
+
+在 menuconfig 的 `Camera drivers -> Sensor settings -> Active camera sensor`
+中选择 OV2640 或 GC032A。构建系统只会编译选中的传感器驱动。
+
 参数：
 
 - `framesize`：`QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA`
@@ -58,5 +63,5 @@ Export the buffer with the SDK script, e.g.:
 
 ## 备注
 
-- 引脚复用（SCCB / DVP / XCLK）由 OV2640 driver 内部完成，应用层不需要调用 `HAL_PIN_Set()`
+- 引脚复用（SCCB / DVP / XCLK）由 camera framework 内部完成，应用层不需要调用 `HAL_PIN_Set()`
 - 该示例适合验证 RGB565 单帧采集链路是否正常

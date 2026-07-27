@@ -3,6 +3,7 @@
 
 #include "camera_test.h"
 #include "camera_handle_internal.h"
+#include "mem_section.h"
 
 typedef struct
 {
@@ -513,6 +514,71 @@ static int run_camera_handle_tests(void)
     return camera_test_run_suite("camera_handle", cases, sizeof(cases) / sizeof(cases[0]));
 }
 MSH_CMD_EXPORT(run_camera_handle_tests, run camera handle tests);
+
+static int run_camera_sensor_smoke(void)
+{
+    static rt_uint8_t frame_buffer[640U * 480U * 2U]
+        L2_RET_BSS_SECT(frame_buffer);
+    camera_handler_instance_t *instance = RT_NULL;
+    const camera_capabilities_t *capabilities = RT_NULL;
+    camera_capture_config_t config =
+    {
+        .pixformat = PIXFORMAT_RGB565,
+        .framesize = FRAMESIZE_VGA,
+        .quality = 0,
+    };
+    camera_capture_request_t request =
+    {
+        .buffer = frame_buffer,
+        .buffer_size = sizeof(frame_buffer),
+        .frame_size = 0,
+    };
+    camera_handle_status_t result;
+
+    camera_handle_set_test_ops(RT_NULL);
+    result = camera_handler_instance_init(&instance);
+    if (result != CAMERA_OK)
+    {
+        rt_kprintf("[SENSOR] open failed: %d\n", result);
+        return -RT_ERROR;
+    }
+
+    result = camera_get_capabilities(instance, &capabilities);
+    if (result != CAMERA_OK || capabilities == RT_NULL)
+    {
+        rt_kprintf("[SENSOR] capabilities failed: %d\n", result);
+        camera_deinit(&instance);
+        return -RT_ERROR;
+    }
+
+    rt_kprintf("[SENSOR] formats=%u framesizes=%u max_buffer=%u\n",
+               capabilities->num_pixformats,
+               capabilities->num_framesizes,
+               (unsigned int)capabilities->max_buffer_size);
+
+    result = camera_change_settings(instance, &config);
+    if (result != CAMERA_OK)
+    {
+        rt_kprintf("[SENSOR] RGB565/VGA config failed: %d\n", result);
+        camera_deinit(&instance);
+        return -RT_ERROR;
+    }
+
+    result = camera_capture_single(instance, &request);
+    rt_kprintf("[SENSOR] RGB565/VGA status=%d frame_size=%u expected=%u\n",
+               result,
+               (unsigned int)request.frame_size,
+               (unsigned int)sizeof(frame_buffer));
+
+    if (camera_deinit(&instance) != CAMERA_OK)
+    {
+        rt_kprintf("[SENSOR] close failed\n");
+        return -RT_ERROR;
+    }
+
+    return result == CAMERA_OK ? RT_EOK : -RT_ERROR;
+}
+MSH_CMD_EXPORT(run_camera_sensor_smoke, capture one frame with the selected sensor);
 
 int main(void)
 {

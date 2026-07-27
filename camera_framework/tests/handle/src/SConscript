@@ -13,7 +13,6 @@ group = DefineGroup('Applications',
                         cwd,
                         os.path.normpath(os.path.join(cwd, '../../common')),
                         os.path.join(camera_root, 'camera/handle'),
-                    ],
-                    CPPDEFINES=['CAMERA_HANDLE_TESTING'])
+                    ])
 
 Return('group')

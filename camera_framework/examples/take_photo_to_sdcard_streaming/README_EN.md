@@ -19,6 +19,13 @@ Current JPEG streaming path:
 msh> take_photo <framesize> <quality> <count>
 ```
 
+## Select a Sensor
+
+Select a sensor under
+`Camera drivers -> Sensor settings -> Active camera sensor` in menuconfig.
+Only the selected driver is compiled. This example uses JPEG streaming and
+currently requires OV2640; GC032A does not support JPEG.
+
 Parameters:
 
 - `framesize`: `QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA`
@@ -49,4 +56,4 @@ These buffers come from example-local PSRAM allocation logic, not from a framewo
 - the ready-frame queue depth is currently `4`
 - if SD write throughput is too low, you may see sequence jumps or dropped-frame growth
 - this example is intended for JPEG streaming only
-- SCCB / DVP / XCLK pin muxing is still handled by the OV2640 driver
+- SCCB / DVP / XCLK pin muxing is handled by the camera framework

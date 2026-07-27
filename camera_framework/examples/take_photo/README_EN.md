@@ -14,6 +14,12 @@ Location: `examples/take_photo`
 msh> take_photo <framesize> <count>
 ```
 
+## Select a Sensor
+
+Select OV2640 or GC032A under
+`Camera drivers -> Sensor settings -> Active camera sensor` in menuconfig.
+Only the selected sensor driver is compiled.
+
 Parameters:
 
 - `framesize`: `QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA`
@@ -58,5 +64,5 @@ The command prints the frame-buffer address and byte count. You can then use SDK
 
 ## Notes
 
-- SCCB / DVP / XCLK pin muxing is handled inside the OV2640 driver; the application does not call `HAL_PIN_Set()`
+- SCCB / DVP / XCLK pin muxing is handled inside the camera framework; the application does not call `HAL_PIN_Set()`
 - this example is mainly intended to validate the RGB565 single-shot capture path

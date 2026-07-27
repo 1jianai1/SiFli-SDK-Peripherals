@@ -14,6 +14,7 @@
 #include "../camera_driver_desc.h"
 #include "ov2640_regs.h"
 #include "ov2640_settings.h"
+#include "camera_xclk.h"
 #include "rtthread.h"
 
 #define DBG_TAG "ov2640"
@@ -524,10 +525,20 @@ static int sensor_open(void)
     cam_dev->current_bank = (rt_uint8_t)BANK_MAX;
     s_active_device = cam_dev;
 
+    if (CAMERA_XCLK_PIN >= 0 &&
+        camera_xclk_start(CAMERA_XCLK_PIN,
+                          CAMERA_XCLK_FREQ) != CAMERA_XCLK_OK)
+    {
+        LOG_E("XCLK start failed");
+        s_active_device = RT_NULL;
+        return -RT_ERROR;
+    }
+
     ret = sccb_init(&g_hw_config.sccb);
     if (ret != RT_EOK)
     {
         LOG_E("SCCB init failed: %d", ret);
+        camera_xclk_stop(CAMERA_XCLK_PIN);
         s_active_device = RT_NULL;
         return -RT_ERROR;
     }
@@ -538,6 +549,7 @@ static int sensor_open(void)
     {
         LOG_E("OV2640 init failed: %d", ret);
         sccb_deinit();
+        camera_xclk_stop(CAMERA_XCLK_PIN);
         s_active_device = RT_NULL;
         return -RT_ERROR;
     }
@@ -546,6 +558,7 @@ static int sensor_open(void)
     {
         LOG_E("Camera runtime init failed: %d", ret);
         sccb_deinit();
+        camera_xclk_stop(CAMERA_XCLK_PIN);
         s_active_device = RT_NULL;
         return -RT_ERROR;
     }
@@ -570,6 +583,7 @@ static int sensor_close(void)
 
     camera_sensor_runtime_close(&cam_dev->runtime);
     sccb_deinit();
+    camera_xclk_stop(CAMERA_XCLK_PIN);
     sensor_reset_bank_state();
     s_active_device = RT_NULL;
 

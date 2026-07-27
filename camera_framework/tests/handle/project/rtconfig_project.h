@@ -1,6 +1,8 @@
 #ifndef RTCONFIG_PROJECT_H__
 #define RTCONFIG_PROJECT_H__
 
+#define CAMERA_HANDLE_TESTING
+
 #if defined(_MSC_VER)
     #define RT_HEAP_SIZE   (680000)
     #define NORESOURCE

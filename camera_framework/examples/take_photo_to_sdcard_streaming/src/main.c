@@ -366,7 +366,7 @@ void take_photo(int argc, char **argv)
     }
 
     /* 1) Initialise the camera handler instance.  The driver is selected at
-     *    compile time via Kconfig (SENSOR_USING_OV2640) and the RT-Thread
+     *    compile time via Kconfig and the RT-Thread
      *    device is registered internally. */
     status = camera_handler_instance_init(&camera_instance);
     if (status != CAMERA_OK)

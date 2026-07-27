@@ -102,8 +102,6 @@ typedef struct {
     void                *dma_instance;
     uint32_t            dma_request;
     int32_t             dma_irqn;
-    int                 xclk_pin;
-    uint32_t            xclk_freq;
 } dvp_config_t;
 
 typedef struct {

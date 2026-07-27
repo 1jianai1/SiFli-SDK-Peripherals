@@ -17,21 +17,10 @@
 #include "drivers/i2c.h"
 #include "bf0_hal.h"
 
-#ifdef PKG_USING_OV2640
 #include <rtconfig.h>
-#endif
 
-#ifdef SF32LB52X
-#define SCCB_SCL_PIN PAD_PA40 // PA40
-#define SCCB_SDA_PIN PAD_PA39 // PA39
-
-#elif defined(SF32LB56X)
-#define SCCB_SCL_PIN PAD_PA76 // PA76
-#define SCCB_SDA_PIN PAD_PA72 // PA72
-
-#else
-#error "SCCB pin definitions not set for this platform"
-#endif
+#define SCCB_SCL_PIN (PAD_PA00 + CAMERA_SCCB_SCL_PIN)
+#define SCCB_SDA_PIN (PAD_PA00 + CAMERA_SCCB_SDA_PIN)
 
 typedef struct
 {

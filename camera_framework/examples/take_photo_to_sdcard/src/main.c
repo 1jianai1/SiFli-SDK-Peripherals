@@ -1,26 +1,23 @@
 /******************************************************************************
  * @file    main.c
- * @brief   OV2640 take_photo_to_sdcard example - capture JPEG frames via the
- *          camera handle high-level API and save them to the SD card.
+ * @brief   Capture JPEG or RGB565 frames through the camera handle API and
+ *          save them to the SD card.
  *
- * The example uses the camera_handle.h API to grab one or more JPEG frames
- * into a PSRAM buffer and then writes each frame as a numbered .jpg file
- * under /photo on the mounted SD card filesystem.
+ * OV2640 frames are saved as JPEG. GC032A RGB565/VGA frames are converted to
+ * PPM so the captured image can be inspected without a host-side converter.
  *
  * Call sequence (per `take_photo` invocation):
  *   camera_handler_instance_init()  - prepare handle state, register and open RT-Thread device
- *   camera_change_settings()        - configure JPEG + framesize + quality
+ *   camera_get_capabilities()       - select JPEG or RGB565 output
+ *   camera_change_settings()        - configure format and frame size
  *   camera_capture_single() (loop)  - blocking single-frame grab
- *   write to /photo/photo_NNN.jpg   - save each captured frame
+ *   save numbered JPEG or PPM files - write each captured frame
  *   camera_deinit()                 - close the device
  *
- * Note: low-level pin muxing for SCCB / DVP / XCLK is performed by the
- * OV2640 driver itself, so this example does not call HAL_PIN_Set().
+ * Low-level SCCB, image-data and XCLK pin muxing is handled by the framework.
  *****************************************************************************/
 
 #include "rtthread.h"
-#include "bf0_hal.h"
-#include "stdio.h"
 #include "string.h"
 #include <stdlib.h>
 #include <fcntl.h>
@@ -29,12 +26,10 @@
 #include "mem_section.h"
 #include "dfs_file.h"
 #include "dfs_posix.h"
-#include "spi_msd.h"
 #include "camera_handle.h"
 
 /* ------------------------------------------------------------------ *
- * PSRAM heap - holds the JPEG frame buffer (internal SRAM is too
- * small for VGA-and-above JPEG output).
+ * PSRAM heap - holds camera frame buffers that are too large for SRAM.
  * ------------------------------------------------------------------ */
 static uint8_t psram_heap_pool[4096 * 1024] L2_RET_BSS_SECT(psram_heap_pool);
 static struct rt_memheap psram_memheap;
@@ -48,7 +43,7 @@ static struct rt_memheap psram_memheap;
  *
  * @return Return 0 on success (fixed value).
  */
-int psram_heap_init(void)
+static int psram_heap_init(void)
 {
     rt_memheap_init(&psram_memheap, "psram_heap", (void *)psram_heap_pool,
                     sizeof(psram_heap_pool));
@@ -62,7 +57,7 @@ int psram_heap_init(void)
  *
  * @return Return a pointer on success, RT_NULL on failure.
  */
-void *psram_heap_malloc(uint32_t size)
+static void *psram_heap_malloc(uint32_t size)
 {
     return rt_memheap_alloc(&psram_memheap, size);
 }
@@ -72,7 +67,7 @@ void *psram_heap_malloc(uint32_t size)
  *
  * @param p is the pointer to free.
  */
-void psram_heap_free(void *p)
+static void psram_heap_free(void *p)
 {
     rt_memheap_free(p);
 }
@@ -84,7 +79,7 @@ void psram_heap_free(void *p)
 /**
  * @brief Locate the SD card device and mount it as the root FAT volume.
  */
-void sdcard_init(void)
+static void sdcard_init(void)
 {
     rt_device_t msd = rt_device_find("sd0");
     if (msd == RT_NULL)
@@ -196,6 +191,17 @@ static rt_size_t calc_jpeg_buffer_size(framesize_t size)
     return buf_size;
 }
 
+static rt_size_t calc_rgb565_buffer_size(framesize_t size,
+                                         uint16_t *width,
+                                         uint16_t *height)
+{
+    if (framesize_to_resolution(size, width, height) != RT_EOK)
+    {
+        return 0;
+    }
+    return (rt_size_t)(*width) * (rt_size_t)(*height) * 2U;
+}
+
 static rt_bool_t caps_has_pixformat(const camera_capabilities_t *caps, pixformat_t fmt)
 {
     rt_uint8_t i;
@@ -278,19 +284,23 @@ static int save_photo(const char *path, const void *buffer, rt_size_t size)
     return RT_EOK;
 }
 
+static int save_rgb565_ppm(const char *path,
+                           const uint8_t *buffer,
+                           uint16_t width,
+                           uint16_t height);
+
 /* ------------------------------------------------------------------ *
  * MSH command: take_photo
  * ------------------------------------------------------------------ */
 
 /**
- * @brief MSH command: capture one or more JPEG frames and save each as
- *        /photo/photo_NNN.jpg on the SD card.
+ * @brief Capture one or more frames and save them to the SD card.
  *
  * Usage:
  *   take_photo <framesize> <quality> <count>
  *
  *   framesize : QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA
- *   quality   : JPEG quality (0 = best, 63 = most compressed)
+ *   quality   : JPEG quality (ignored for RGB565 sensors)
  *   count     : number of frames to capture (>= 1)
  *
  * Example:
@@ -308,6 +318,9 @@ void take_photo(int argc, char **argv)
     camera_handle_status_t         status;
     uint8_t                       *buffer = RT_NULL;
     rt_size_t                      buffer_size;
+    pixformat_t                    pixformat;
+    uint16_t                       width = 0;
+    uint16_t                       height = 0;
     int                            quality;
     int                            count;
 
@@ -349,7 +362,7 @@ void take_photo(int argc, char **argv)
     }
 
     /* 1) Initialise the camera handler instance.  The driver is selected at
-     *    compile time via Kconfig (SENSOR_USING_OV2640) and the RT-Thread
+     *    compile time via Kconfig and the RT-Thread
      *    device is registered internally. */
     status = camera_handler_instance_init(&camera_instance);
     if (status != CAMERA_OK)
@@ -364,22 +377,39 @@ void take_photo(int argc, char **argv)
         rt_kprintf("Failed to query camera capabilities (%d)\n", status);
         goto close_camera;
     }
-    if (!caps_has_pixformat(caps, PIXFORMAT_JPEG))
-    {
-        rt_kprintf("Camera does not support PIXFORMAT_JPEG\n");
-        goto close_camera;
-    }
     if (!caps_has_framesize(caps, framesize))
     {
         rt_kprintf("Camera does not support requested framesize: %s\n", argv[1]);
         goto close_camera;
     }
 
-    /* 2) Push JPEG + framesize + quality configuration. The handle layer
-     *    inserts a 500 ms AEC/AWB settle delay internally. */
-    cfg.pixformat = PIXFORMAT_JPEG;
+    if (caps_has_pixformat(caps, PIXFORMAT_JPEG))
+    {
+        pixformat = PIXFORMAT_JPEG;
+        buffer_size = caps->max_buffer_size != 0
+                          ? caps->max_buffer_size
+                          : calc_jpeg_buffer_size(framesize);
+    }
+    else if (caps_has_pixformat(caps, PIXFORMAT_RGB565))
+    {
+        pixformat = PIXFORMAT_RGB565;
+        buffer_size = calc_rgb565_buffer_size(framesize, &width, &height);
+        if (buffer_size == 0 || width > 640U)
+        {
+            rt_kprintf("Unsupported RGB565 framesize: %s\n", argv[1]);
+            goto close_camera;
+        }
+        rt_kprintf("RGB565 capture ignores the quality argument\n");
+    }
+    else
+    {
+        rt_kprintf("Camera supports neither JPEG nor RGB565 capture\n");
+        goto close_camera;
+    }
+
+    cfg.pixformat = pixformat;
     cfg.framesize = framesize;
-    cfg.quality   = quality;
+    cfg.quality = (uint8_t)quality;
     status = camera_change_settings(camera_instance, &cfg);
     if (status != CAMERA_OK)
     {
@@ -387,22 +417,18 @@ void take_photo(int argc, char **argv)
         goto close_camera;
     }
 
-    /* 4) Allocate the JPEG frame buffer in PSRAM. */
-    buffer_size = (caps->max_buffer_size != 0) ?
-                  caps->max_buffer_size :
-                  calc_jpeg_buffer_size(framesize);
     buffer = psram_heap_malloc(buffer_size);
     if (buffer == RT_NULL)
     {
-        rt_kprintf("Failed to allocate %u bytes for JPEG capture!\n",
+        rt_kprintf("Failed to allocate %u bytes for capture\n",
                    (unsigned int)buffer_size);
         goto close_camera;
     }
 
-    rt_kprintf("JPEG capture: framesize=%s, quality=%d, buffer=%u bytes @ %p\n",
-               argv[1], quality, (unsigned int)buffer_size, buffer);
+    rt_kprintf("Capture: format=%s, framesize=%s, buffer=%u bytes @ %p\n",
+               pixformat == PIXFORMAT_JPEG ? "JPEG" : "RGB565",
+               argv[1], (unsigned int)buffer_size, buffer);
 
-    /* 5) Grab `count` frames and write each one as a numbered .jpg file. */
     for (int photo_idx = 0; photo_idx < count; photo_idx++)
     {
         req.buffer      = buffer;
@@ -418,9 +444,24 @@ void take_photo(int argc, char **argv)
         }
 
         char file_path[64];
-        rt_snprintf(file_path, sizeof(file_path),
-                    "%s/photo_%03d.jpg", PHOTO_DIR, photo_idx + 1);
-        save_photo(file_path, buffer, req.frame_size);
+        if (pixformat == PIXFORMAT_JPEG)
+        {
+            rt_snprintf(file_path, sizeof(file_path),
+                        "%s/photo_%03d.jpg", PHOTO_DIR, photo_idx + 1);
+            save_photo(file_path, buffer, req.frame_size);
+        }
+        else if (req.frame_size == buffer_size)
+        {
+            rt_snprintf(file_path, sizeof(file_path),
+                        "%s/photo_%03d.ppm", PHOTO_DIR, photo_idx + 1);
+            save_rgb565_ppm(file_path, buffer, width, height);
+        }
+        else
+        {
+            rt_kprintf("Incomplete RGB565 frame: %u/%u bytes\n",
+                       (unsigned int)req.frame_size,
+                       (unsigned int)buffer_size);
+        }
     }
 
     psram_heap_free(buffer);
@@ -433,7 +474,77 @@ close_camera:
         psram_heap_free(buffer);
     }
 }
-MSH_CMD_EXPORT(take_photo, Capture JPEG photo(s) using ov2640 and save to SD card);
+MSH_CMD_EXPORT(take_photo, Capture photo(s) and save to SD card);
+
+static int save_rgb565_ppm(const char *path,
+                           const uint8_t *buffer,
+                           uint16_t width,
+                           uint16_t height)
+{
+    static uint8_t row[640U * 3U];
+    char header[32];
+    int header_size;
+    int fd;
+    uint16_t y;
+
+    if (buffer == RT_NULL || width > 640U)
+    {
+        return -RT_EINVAL;
+    }
+
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0);
+    if (fd < 0)
+    {
+        rt_kprintf("Failed to open %s for writing\n", path);
+        return -RT_ERROR;
+    }
+
+    header_size = rt_snprintf(header,
+                              sizeof(header),
+                              "P6\n%u %u\n255\n",
+                              width,
+                              height);
+    if (write(fd, header, header_size) != header_size)
+    {
+        close(fd);
+        return -RT_ERROR;
+    }
+
+    for (y = 0; y < height; y++)
+    {
+        uint16_t x;
+        const uint8_t *source = buffer + (uint32_t)y * width * 2U;
+
+        for (x = 0; x < width; x++)
+        {
+            uint16_t pixel =
+                (uint16_t)(((uint16_t)source[x * 2U] << 8) |
+                           source[x * 2U + 1U]);
+            uint8_t red = (uint8_t)((pixel >> 11) & 0x1fU);
+            uint8_t green = (uint8_t)((pixel >> 5) & 0x3fU);
+            uint8_t blue = (uint8_t)(pixel & 0x1fU);
+
+            row[x * 3U] = (uint8_t)((red << 3) | (red >> 2));
+            row[x * 3U + 1U] =
+                (uint8_t)((green << 2) | (green >> 4));
+            row[x * 3U + 2U] =
+                (uint8_t)((blue << 3) | (blue >> 2));
+        }
+
+        if (write(fd, row, width * 3U) != (int)(width * 3U))
+        {
+            close(fd);
+            return -RT_ERROR;
+        }
+    }
+
+    close(fd);
+    rt_kprintf("Saved %s (%u x %u RGB565 -> PPM)\n",
+               path,
+               width,
+               height);
+    return RT_EOK;
+}
 
 typedef struct
 {
@@ -575,7 +686,7 @@ MSH_CMD_EXPORT(take_photo_async, Capture one JPEG asynchronously and save to SD 
  */
 int main(void)
 {
-    rt_kprintf("OV2640 Camera Take Photo to SD Card Example\n");
+    rt_kprintf("Camera Take Photo to SD Card Example\n");
     psram_heap_init();
     sdcard_init();
 

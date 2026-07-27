@@ -78,9 +78,6 @@ static uint8_t s_dvp_pingpong_pool[CAMERA_DVP_PINGPONG_POOL_SIZE]
 static uint8_t s_dvp_pingpong_pool[CAMERA_DVP_PINGPONG_POOL_SIZE];
 #endif
 
-static GPT_HandleTypeDef s_xclk_gptim;
-static rt_bool_t         s_xclk_initialized = RT_FALSE;
-
 /**
  * @brief Validate DVP configuration integrity before initialization.
  *
@@ -592,95 +589,6 @@ static int dvp_config_timer(dvp_handle_t *handle)
     
     return RT_EOK;
 }
-/*
- *******************************************************************************
- * XCLK (sensor master clock) generation via GPTIM2
- *******************************************************************************
- */
-
-/** @brief Start XCLK PWM on given PA pin index. */
-static void dvp_xclk_start(int pin, uint32_t freq)
-{
-    HAL_StatusTypeDef status;
-    uint32_t timer_clk;
-    uint32_t period;
-    GPT_OC_InitTypeDef sConfigOC = {0};
-
-    if (s_xclk_initialized)
-    {
-        HAL_GPT_PWM_Stop(&s_xclk_gptim, GPT_CHANNEL_1);
-        HAL_GPT_Base_DeInit(&s_xclk_gptim);
-        s_xclk_initialized = RT_FALSE;
-    }
-
-    HAL_PIN_Set(PAD_PA00 + pin, GPTIM2_CH1, PIN_NOPULL, 1);
-    HAL_RCC_EnableModule(RCC_MOD_GPTIM2);
-
-#if defined(SOC_SF32LB52X) && SOC_SF32LB52X == 1
-    timer_clk = 24000000;
-#else
-    timer_clk = HAL_RCC_GetPCLKFreq(s_xclk_gptim.core, 1);
-#endif
-
-    period = (timer_clk / freq) - 1;
-    if (period < 1 || period > 0xFFFF)
-    {
-        LOG_E("XCLK: frequency %u Hz out of range (timer_clk=%u Hz)",
-              (unsigned)freq, (unsigned)timer_clk);
-        return;
-    }
-
-    s_xclk_gptim.Instance         = hwp_gptim2;
-    s_xclk_gptim.Init.Prescaler   = 0;
-    s_xclk_gptim.Init.CounterMode = GPT_COUNTERMODE_UP;
-    s_xclk_gptim.Init.Period      = period;
-
-    status = HAL_GPT_Base_Init(&s_xclk_gptim);
-    if (status != HAL_OK)
-    {
-        LOG_E("XCLK: GPTIM2 base init failed (%d)", status);
-        return;
-    }
-
-    sConfigOC.OCMode     = GPT_OCMODE_PWM1;
-    sConfigOC.Pulse      = period / 2 + 1;  /* 50 % duty cycle */
-    sConfigOC.OCPolarity = GPT_OCPOLARITY_HIGH;
-    sConfigOC.OCFastMode = GPT_OCFAST_DISABLE;
-
-    status = HAL_GPT_PWM_ConfigChannel(&s_xclk_gptim, &sConfigOC, GPT_CHANNEL_1);
-    if (status != HAL_OK)
-    {
-        LOG_E("XCLK: GPTIM2 PWM config failed (%d)", status);
-        HAL_GPT_Base_DeInit(&s_xclk_gptim);
-        return;
-    }
-
-    status = HAL_GPT_PWM_Start(&s_xclk_gptim, GPT_CHANNEL_1);
-    if (status != HAL_OK)
-    {
-        LOG_E("XCLK: GPTIM2 PWM start failed (%d)", status);
-        HAL_GPT_Base_DeInit(&s_xclk_gptim);
-        return;
-    }
-
-    s_xclk_initialized = RT_TRUE;
-    rt_thread_mdelay(10);  /* wait for clock to stabilise before SCCB access */
-    LOG_I("XCLK: %u Hz on PA%d (period=%u)", (unsigned)freq, pin, (unsigned)period);
-}
-
-/** @brief Stop XCLK PWM and restore pin to GPIO mode. */
-static void dvp_xclk_stop(int pin)
-{
-    if (!s_xclk_initialized)
-        return;
-
-    HAL_GPT_PWM_Stop(&s_xclk_gptim, GPT_CHANNEL_1);
-    HAL_GPT_Base_DeInit(&s_xclk_gptim);
-    s_xclk_initialized = RT_FALSE;
-    HAL_PIN_Set(PAD_PA00 + pin, GPIO_A0 + pin, PIN_NOPULL, 1);
-    LOG_I("XCLK: stopped (PA%d)", pin);
-}
-
 /** @brief Initialize DVP backend state and hardware resources. */
 int dvp_init(bus_adapter_t *self)
 {
@@ -714,15 +622,6 @@ int dvp_init(bus_adapter_t *self)
     {
         dvp_apply_default_resource_config(&handle->config);
     }
-    if (handle->config.xclk_pin < 0)
-    {
-        handle->config.xclk_pin = CAMERA_DVP_XCLK_PIN;
-    }
-    if (handle->config.xclk_freq == 0)
-    {
-        handle->config.xclk_freq = CAMERA_DVP_XCLK_FREQ;
-    }
-
     if (dvp_validate_config(&handle->config) != RT_EOK)
     {
         LOG_E("DVP init: configuration not applied or invalid");
@@ -757,9 +656,6 @@ int dvp_init(bus_adapter_t *self)
         return -RT_ERROR;
     if (dvp_config_timer(handle) != 0)
         return -RT_ERROR;
-
-    if (handle->config.xclk_pin >= 0 && handle->config.xclk_freq > 0)
-        dvp_xclk_start(handle->config.xclk_pin, handle->config.xclk_freq);
 
     LOG_I("DVP initialized successfully");
     const char *mode_str = "RGB565";
@@ -805,9 +701,6 @@ int dvp_deinit(bus_adapter_t *self)
     dvp_handle_t *handle = (dvp_handle_t *)self->priv;
 
     dvp_stop(self);
-
-    if (handle->config.xclk_pin >= 0)
-        dvp_xclk_stop(handle->config.xclk_pin);
 
     HAL_NVIC_DisableIRQ(handle->config.dma_irqn);
     HAL_DMA_DeInit(&handle->dma);

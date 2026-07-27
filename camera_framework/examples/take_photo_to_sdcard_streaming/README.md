@@ -19,6 +19,12 @@
 msh> take_photo <framesize> <quality> <count>
 ```
 
+## 选择摄像头
+
+在 menuconfig 的 `Camera drivers -> Sensor settings -> Active camera sensor`
+中选择摄像头，构建系统只会编译选中的驱动。本示例使用 JPEG 流式采集，
+当前应选择 OV2640；GC032A 不支持 JPEG。
+
 参数：
 
 - `framesize`：`QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA`
@@ -49,4 +55,4 @@ msh> take_photo <framesize> <quality> <count>
 - ready-frame queue 深度当前为 `4`
 - 如果 SD 写入速度跟不上，可能看到 `dseq` 跳变或丢帧统计增加
 - 该示例只适用于 JPEG 流式采集
-- 引脚复用仍由 OV2640 driver 内部完成
+- 引脚复用由 camera framework 内部完成

@@ -29,6 +29,7 @@ typedef struct
 struct camera_device_ops
 {
   const camera_capabilities_t *capabilities; /* static capability descriptor */
+  const camera_capture_config_t *default_config; /* state after open */
   int (*open)(void);                         /* bring up sensor + bus */
   int (*close)(void);                        /* tear down sensor + bus */
   int (*set_pixformat)(pixformat_t pixformat);

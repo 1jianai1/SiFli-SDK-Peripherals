@@ -1,6 +1,6 @@
-#include "ov2640_jpeg_assembler.h"
+#include "camera_jpeg_assembler.h"
 
-void ov2640_jpeg_assembler_reset(ov2640_jpeg_assembler_t *assembler,
+void camera_jpeg_assembler_reset(camera_jpeg_assembler_t *assembler,
                                  uint8_t *buffer,
                                  size_t capacity)
 {
@@ -18,8 +18,8 @@ void ov2640_jpeg_assembler_reset(ov2640_jpeg_assembler_t *assembler,
     assembler->complete = 0;
 }
 
-ov2640_jpeg_result_t ov2640_jpeg_assembler_feed(
-    ov2640_jpeg_assembler_t *assembler,
+camera_jpeg_result_t camera_jpeg_assembler_feed(
+    camera_jpeg_assembler_t *assembler,
     const uint8_t *segment,
     size_t segment_size)
 {
@@ -28,11 +28,11 @@ ov2640_jpeg_result_t ov2640_jpeg_assembler_feed(
     if (assembler == NULL || assembler->buffer == NULL ||
         assembler->capacity < 2 || segment == NULL || segment_size == 0)
     {
-        return OV2640_JPEG_ERROR;
+        return CAMERA_JPEG_ERROR;
     }
     if (assembler->complete)
     {
-        return OV2640_JPEG_COMPLETE;
+        return CAMERA_JPEG_COMPLETE;
     }
 
     if (assembler->soi_found)
@@ -43,7 +43,7 @@ ov2640_jpeg_result_t ov2640_jpeg_assembler_feed(
             segment_addr < buffer_addr + assembler->capacity &&
             (size_t)(segment_addr - buffer_addr) < assembler->frame_size)
         {
-            return OV2640_JPEG_ERROR;
+            return CAMERA_JPEG_ERROR;
         }
     }
 
@@ -68,17 +68,17 @@ ov2640_jpeg_result_t ov2640_jpeg_assembler_feed(
 
         if (assembler->frame_size >= assembler->capacity)
         {
-            return OV2640_JPEG_ERROR;
+            return CAMERA_JPEG_ERROR;
         }
         assembler->buffer[assembler->frame_size++] = byte;
         if (assembler->previous_byte == 0xFFU && byte == 0xD9U)
         {
             assembler->complete = 1;
-            return OV2640_JPEG_COMPLETE;
+            return CAMERA_JPEG_COMPLETE;
         }
         assembler->previous_byte = byte;
         assembler->previous_valid = 1;
     }
 
-    return OV2640_JPEG_INCOMPLETE;
+    return CAMERA_JPEG_INCOMPLETE;
 }

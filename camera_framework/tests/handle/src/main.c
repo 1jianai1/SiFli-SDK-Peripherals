@@ -35,6 +35,20 @@ static const camera_capabilities_t s_fake_caps =
     .max_buffer_size = 4096,
 };
 
+static const camera_capture_config_t s_fake_default_config =
+{
+    .pixformat = PIXFORMAT_JPEG,
+    .framesize = FRAMESIZE_VGA,
+    .quality = 10,
+};
+
+static const camera_capture_config_t s_fake_rgb565_default_config =
+{
+    .pixformat = PIXFORMAT_RGB565,
+    .framesize = FRAMESIZE_QVGA,
+    .quality = 0,
+};
+
 static int fake_open(void)
 {
     s_fake_state.open_calls++;
@@ -149,11 +163,27 @@ static int fake_stop_stream(void)
 static const camera_device_ops_t s_fake_ops =
 {
     .capabilities = &s_fake_caps,
+    .default_config = &s_fake_default_config,
     .open = fake_open,
     .close = fake_close,
     .set_pixformat = fake_set_pixformat,
     .set_framesize = fake_set_framesize,
     .set_quality = fake_set_quality,
+    .capture = fake_capture,
+    .capture_async = fake_capture_async,
+    .start_stream = fake_start_stream,
+    .stop_stream = fake_stop_stream,
+};
+
+static const camera_device_ops_t s_fake_rgb565_ops =
+{
+    .capabilities = &s_fake_caps,
+    .default_config = &s_fake_rgb565_default_config,
+    .open = fake_open,
+    .close = fake_close,
+    .set_pixformat = fake_set_pixformat,
+    .set_framesize = fake_set_framesize,
+    .set_quality = RT_NULL,
     .capture = fake_capture,
     .capture_async = fake_capture_async,
     .start_stream = fake_start_stream,
@@ -194,6 +224,31 @@ static void test_handle_init_and_deinit(void)
     CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_OK);
     CAMERA_TEST_ASSERT_TRUE(instance == RT_NULL);
     CAMERA_TEST_ASSERT_EQ(s_fake_state.close_calls, 1);
+}
+
+static void test_non_jpeg_driver_uses_its_default_without_quality_op(void)
+{
+    camera_handler_instance_t *instance = RT_NULL;
+    camera_capture_config_t capture_config =
+    {
+        .pixformat = PIXFORMAT_RGB565,
+        .framesize = FRAMESIZE_VGA,
+        .quality = 20,
+    };
+
+    fake_reset();
+    camera_handle_set_test_ops(&s_fake_rgb565_ops);
+
+    CAMERA_TEST_ASSERT_EQ(camera_handler_instance_init(&instance), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(instance->active_config.pixformat, PIXFORMAT_RGB565);
+    CAMERA_TEST_ASSERT_EQ(instance->active_config.framesize, FRAMESIZE_QVGA);
+    CAMERA_TEST_ASSERT_EQ(instance->active_config.quality, 0);
+
+    CAMERA_TEST_ASSERT_EQ(camera_change_settings(instance, &capture_config), CAMERA_OK);
+    CAMERA_TEST_ASSERT_EQ(instance->active_config.pixformat, PIXFORMAT_RGB565);
+    CAMERA_TEST_ASSERT_EQ(instance->active_config.framesize, FRAMESIZE_VGA);
+    CAMERA_TEST_ASSERT_EQ(instance->active_config.quality, 0);
+    CAMERA_TEST_ASSERT_EQ(camera_deinit(&instance), CAMERA_OK);
 }
 
 static void test_capture_rejected_while_streaming(void)
@@ -442,6 +497,8 @@ static int run_camera_handle_tests(void)
     static const camera_test_case_t cases[] =
     {
         { "test_handle_init_and_deinit", test_handle_init_and_deinit },
+        { "test_non_jpeg_driver_uses_its_default_without_quality_op",
+          test_non_jpeg_driver_uses_its_default_without_quality_op },
         { "test_capture_rejected_while_streaming", test_capture_rejected_while_streaming },
         { "test_async_capture_blocks_conflicting_operations",
           test_async_capture_blocks_conflicting_operations },

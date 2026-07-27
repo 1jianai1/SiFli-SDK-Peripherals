@@ -19,8 +19,7 @@
 #include "rtthread.h"
 #include "rtconfig.h"
 #include "../../handle/camera_handle_internal.h"
-#include "data_bus_adapter.h"
-#include "ov2640_jpeg_assembler.h"
+#include "camera_sensor_runtime.h"
 
 #define OV2640_ADDR 0x30  /* 7-bit I2C/SCCB slave address */
 
@@ -30,35 +29,10 @@
  *******************************************************************************
  */
 
-/** @brief Runtime state for continuous stream capture. */
-typedef struct
-{
-    uint8_t    *buffers[2];           /* ping-pong buffer pair */
-    rt_size_t   buffer_size;          /* size of each buffer in bytes */
-    rt_uint8_t  active_buffer_index;  /* index of the buffer currently being filled */
-    rt_uint32_t sequence;             /* monotonically increasing frame counter */
-    camera_stream_frame_callback_t frame_callback;  /* user callback per frame; NULL = single-shot mode */
-    void       *callback_context;     /* opaque pointer forwarded to callback */
-} sensor_stream_state_t;
-
-typedef struct
-{
-    camera_capture_done_callback_t callback;
-    void *context;
-    rt_bool_t in_flight;
-} sensor_async_capture_state_t;
-
 /** @brief OV2640 driver runtime instance. */
 typedef struct {
-    framesize_t                     framesize;      /* active frame size */
-    uint8_t                         quality;        /* active JPEG quality */
-    pixformat_t                     pixformat;      /* active pixel format */
-    volatile rt_size_t              last_frame_size;/* last completed frame size */
-    struct rt_semaphore             frame_sem;      /* posted by frame callback, consumed by capture path */
-    sensor_stream_state_t           stream;         /* streaming state (inactive for single-shot capture) */
-    sensor_async_capture_state_t    async_capture;  /* non-blocking single-shot state */
-    ov2640_jpeg_assembler_t         jpeg_single;    /* JPEG single-shot segment assembler */
-    rt_uint8_t                      current_bank;   /* cached BANK_SEL value; ov2640_bank_t cast at use site */
+    camera_sensor_runtime_t runtime;
+    rt_uint8_t current_bank;
 } sensor_device_t;
 
 /* Internal command IDs used by ov2640.c helper dispatch. Not part of the
@@ -70,10 +44,6 @@ typedef struct {
 
 /* --- Image quality ------------------------------------------------------- */
 #define CMD_SET_QUALITY         0x06  /* int  0…63   */
-
-/* --- Capture control ----------------------------------------------------- */
-#define CMD_START_STREAM        0x22  /* camera_stream_start_args_t* */
-#define CMD_STOP_STREAM         0x23  /* no argument */
 
 /*
  *******************************************************************************

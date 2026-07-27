@@ -584,7 +584,7 @@ camera_handle_status_t camera_handler_instance_init(camera_handler_instance_t **
     rt_memset(handle, 0, sizeof(*handle));
     handle->device_ops = ops;
 
-    if (ops->open == RT_NULL)
+    if (ops->open == RT_NULL || ops->default_config == RT_NULL)
     {
         status = CAMERA_ERRORRESOURCE;
         goto out;
@@ -600,9 +600,7 @@ camera_handle_status_t camera_handler_instance_init(camera_handler_instance_t **
     }
 
     handle->is_open = RT_TRUE;
-    handle->active_config.pixformat = PIXFORMAT_JPEG;
-    handle->active_config.framesize = FRAMESIZE_VGA;
-    handle->active_config.quality = 10;
+    handle->active_config = *ops->default_config;
     handle->stream.sem_initialized = RT_FALSE;
     handle->stream.jpeg.parse_sem_initialized = RT_FALSE;
     handle->stream.jpeg.exit_sem_initialized = RT_FALSE;
@@ -751,8 +749,7 @@ camera_handle_status_t camera_change_settings(camera_handler_instance_t *instanc
 
     device_ops = instance->device_ops;
     if (device_ops->set_pixformat == RT_NULL ||
-        device_ops->set_framesize == RT_NULL ||
-        device_ops->set_quality == RT_NULL)
+        device_ops->set_framesize == RT_NULL)
     {
         status = CAMERA_ERRORRESOURCE;
         goto out;
@@ -774,13 +771,21 @@ camera_handle_status_t camera_change_settings(camera_handler_instance_t *instanc
     }
     instance->active_config.framesize = config->framesize;
 
-    result = (rt_err_t)device_ops->set_quality(config->quality);
-    if (result != RT_EOK)
+    if (device_ops->set_quality != RT_NULL)
     {
-        status = camera_status_from_rt_err(result);
+        result = (rt_err_t)device_ops->set_quality(config->quality);
+        if (result != RT_EOK)
+        {
+            status = camera_status_from_rt_err(result);
+            goto out;
+        }
+        instance->active_config.quality = config->quality;
+    }
+    else if (config->pixformat == PIXFORMAT_JPEG)
+    {
+        status = CAMERA_ERRORRESOURCE;
         goto out;
     }
-    instance->active_config.quality = config->quality;
 
     status = CAMERA_OK;
 

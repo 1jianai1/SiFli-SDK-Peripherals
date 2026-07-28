@@ -11,12 +11,14 @@ def main():
     config = (EXAMPLE / "project/proj.conf").read_text()
     source = (EXAMPLE / "src/main.c").read_text()
 
-    for setting in (
-        "CONFIG_SENSOR_USING_GC032A=y",
-        "CONFIG_CAMERA_GC032A_INTERFACE_SERIAL_2BIT=y",
+    if not any(
+        setting in config
+        for setting in (
+            "CONFIG_SENSOR_USING_GC032A=y",
+            "CONFIG_SENSOR_USING_BF30A2=y",
+        )
     ):
-        if setting not in config:
-            raise AssertionError(f"missing example config: {setting}")
+        raise AssertionError("missing supported RGB565 sensor config")
 
     for setting in (
         "CONFIG_CAMERA_SERIAL_SPI2",
@@ -42,6 +44,15 @@ def main():
     ):
         if text not in source:
             raise AssertionError(f"missing unified capture behavior: {text}")
+
+    for text in (
+        'strcmp(argv[1], "RGB565") == 0',
+        "caps->num_framesizes != 1U",
+        "framesize = caps->framesizes[0];",
+        "format_string_to_framesize(argv[1])",
+    ):
+        if text not in source:
+            raise AssertionError(f"missing RGB565 alias behavior: {text}")
 
     print("camera_sdcard_example_test: PASS")
 

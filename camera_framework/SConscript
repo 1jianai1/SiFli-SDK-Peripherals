@@ -26,6 +26,9 @@ if GetDepend('SENSOR_USING_OV2640'):
 elif GetDepend('SENSOR_USING_GC032A'):
     src += Glob('./camera/driver/gc032a/*.c')
     include += ['./camera/driver/gc032a']
+elif GetDepend('SENSOR_USING_BF30A2'):
+    src += Glob('./camera/driver/bf30a2/*.c')
+    include += ['./camera/driver/bf30a2']
 
 group = DefineGroup('Drivers', src, depend = ['CAMERA_FRAMEWORK_ENABLE'], CPPPATH = include, LIBPATH = include)
 

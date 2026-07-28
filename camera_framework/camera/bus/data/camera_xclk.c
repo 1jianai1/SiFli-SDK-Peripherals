@@ -11,6 +11,7 @@
 static GPT_HandleTypeDef s_xclk_gptim;
 static rt_bool_t s_xclk_initialized = RT_FALSE;
 static int s_xclk_pin = -1;
+static uint32_t s_xclk_channel = GPT_CHANNEL_1;
 
 int camera_xclk_start(int pin, uint32_t frequency_hz)
 {
@@ -34,11 +35,26 @@ int camera_xclk_start(int pin, uint32_t frequency_hz)
         }
     }
 
+    if (frequency_hz == 24000000U)
+    {
+        timer_hz = HAL_RCC_GetPCLKFreq(CORE_ID_HCPU, 1);
+        s_xclk_gptim.Instance = hwp_gptim1;
+        s_xclk_channel = GPT_CHANNEL_2;
+        HAL_PIN_Set(PAD_PA00 + pin, GPTIM1_CH2, PIN_NOPULL, 1);
+        HAL_RCC_EnableModule(RCC_MOD_GPTIM1);
+    }
+    else
+    {
 #if defined(SOC_SF32LB52X) && SOC_SF32LB52X == 1
-    timer_hz = 24000000U;
+        timer_hz = 24000000U;
 #else
-    timer_hz = HAL_RCC_GetPCLKFreq(s_xclk_gptim.core, 1);
+        timer_hz = HAL_RCC_GetPCLKFreq(CORE_ID_HCPU, 1);
 #endif
+        s_xclk_gptim.Instance = hwp_gptim2;
+        s_xclk_channel = GPT_CHANNEL_1;
+        HAL_PIN_Set(PAD_PA00 + pin, GPTIM2_CH1, PIN_NOPULL, 1);
+        HAL_RCC_EnableModule(RCC_MOD_GPTIM2);
+    }
 
     ret = camera_xclk_calculate_period(timer_hz, frequency_hz, &period);
     if (ret != CAMERA_XCLK_OK)
@@ -49,10 +65,6 @@ int camera_xclk_start(int pin, uint32_t frequency_hz)
         return ret;
     }
 
-    HAL_PIN_Set(PAD_PA00 + pin, GPTIM2_CH1, PIN_NOPULL, 1);
-    HAL_RCC_EnableModule(RCC_MOD_GPTIM2);
-
-    s_xclk_gptim.Instance = hwp_gptim2;
     s_xclk_gptim.Init.Prescaler = 0;
     s_xclk_gptim.Init.CounterMode = GPT_COUNTERMODE_UP;
     s_xclk_gptim.Init.Period = period;
@@ -71,7 +83,7 @@ int camera_xclk_start(int pin, uint32_t frequency_hz)
     output_config.OCFastMode = GPT_OCFAST_DISABLE;
     status = HAL_GPT_PWM_ConfigChannel(&s_xclk_gptim,
                                        &output_config,
-                                       GPT_CHANNEL_1);
+                                       s_xclk_channel);
     if (status != HAL_OK)
     {
         LOG_E("GPTIM2 PWM config failed: %d", status);
@@ -80,7 +92,7 @@ int camera_xclk_start(int pin, uint32_t frequency_hz)
         return CAMERA_XCLK_HW;
     }
 
-    status = HAL_GPT_PWM_Start(&s_xclk_gptim, GPT_CHANNEL_1);
+    status = HAL_GPT_PWM_Start(&s_xclk_gptim, s_xclk_channel);
     if (status != HAL_OK)
     {
         LOG_E("GPTIM2 PWM start failed: %d", status);
@@ -111,7 +123,7 @@ int camera_xclk_stop(int pin)
     }
 
     active_pin = s_xclk_pin;
-    pwm_status = HAL_GPT_PWM_Stop(&s_xclk_gptim, GPT_CHANNEL_1);
+    pwm_status = HAL_GPT_PWM_Stop(&s_xclk_gptim, s_xclk_channel);
     base_status = HAL_GPT_Base_DeInit(&s_xclk_gptim);
     s_xclk_initialized = RT_FALSE;
     s_xclk_pin = -1;

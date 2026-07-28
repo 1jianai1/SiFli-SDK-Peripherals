@@ -121,6 +121,7 @@ static framesize_t format_string_to_framesize(const char *str)
     else if (strcmp(str, "HD") == 0)    return FRAMESIZE_HD;
     else if (strcmp(str, "SXGA") == 0)  return FRAMESIZE_SXGA;
     else if (strcmp(str, "UXGA") == 0)  return FRAMESIZE_UXGA;
+    else if (strcmp(str, "240X320") == 0) return FRAMESIZE_240X320;
     else                                return FRAMESIZE_INVALID;
 }
 
@@ -152,6 +153,7 @@ static int framesize_to_resolution(framesize_t size, uint16_t *width, uint16_t *
         case FRAMESIZE_HD:    *width = 1280; *height = 720;  break;
         case FRAMESIZE_SXGA:  *width = 1280; *height = 1024; break;
         case FRAMESIZE_UXGA:  *width = 1600; *height = 1200; break;
+        case FRAMESIZE_240X320: *width = 240; *height = 320; break;
         default:
             return -RT_EINVAL;
     }
@@ -319,6 +321,8 @@ void take_photo(int argc, char **argv)
     uint8_t                       *buffer = RT_NULL;
     rt_size_t                      buffer_size;
     pixformat_t                    pixformat;
+    framesize_t                    framesize;
+    rt_bool_t                      auto_rgb565;
     uint16_t                       width = 0;
     uint16_t                       height = 0;
     int                            quality;
@@ -326,19 +330,25 @@ void take_photo(int argc, char **argv)
 
     if (argc != 4)
     {
-        rt_kprintf("Usage: take_photo <framesize> <quality> <count>\n");
-        rt_kprintf("Framesize options: QQVGA, QCIF, QVGA, CIF, VGA, SVGA, XGA, HD, SXGA, UXGA\n");
+        rt_kprintf("Usage: take_photo <framesize|RGB565> <quality> <count>\n");
+        rt_kprintf("Framesize options: QQVGA, QCIF, QVGA, CIF, VGA, SVGA, XGA, HD, SXGA, UXGA, 240X320\n");
+        rt_kprintf("RGB565 selects the camera's only supported framesize\n");
         rt_kprintf("quality: 0 (highest) to 63 (lowest)\n");
         rt_kprintf("count: number of photos to capture (>=1)\n");
-        rt_kprintf("Example: take_photo VGA 10 3\n");
+        rt_kprintf("Examples: take_photo VGA 10 3, take_photo RGB565 0 1\n");
         return;
     }
 
-    framesize_t framesize = format_string_to_framesize(argv[1]);
-    if (framesize == FRAMESIZE_INVALID)
+    auto_rgb565 = strcmp(argv[1], "RGB565") == 0;
+    framesize = FRAMESIZE_INVALID;
+    if (!auto_rgb565)
     {
-        rt_kprintf("Unsupported framesize: %s\n", argv[1]);
-        return;
+        framesize = format_string_to_framesize(argv[1]);
+        if (framesize == FRAMESIZE_INVALID)
+        {
+            rt_kprintf("Unsupported framesize or format: %s\n", argv[1]);
+            return;
+        }
     }
 
     quality = atoi(argv[2]);
@@ -377,13 +387,27 @@ void take_photo(int argc, char **argv)
         rt_kprintf("Failed to query camera capabilities (%d)\n", status);
         goto close_camera;
     }
-    if (!caps_has_framesize(caps, framesize))
+    if (auto_rgb565)
+    {
+        if (!caps_has_pixformat(caps, PIXFORMAT_RGB565))
+        {
+            rt_kprintf("Camera does not support RGB565 capture\n");
+            goto close_camera;
+        }
+        if (caps->framesizes == RT_NULL || caps->num_framesizes != 1U)
+        {
+            rt_kprintf("RGB565 auto mode requires exactly one framesize\n");
+            goto close_camera;
+        }
+        framesize = caps->framesizes[0];
+    }
+    else if (!caps_has_framesize(caps, framesize))
     {
         rt_kprintf("Camera does not support requested framesize: %s\n", argv[1]);
         goto close_camera;
     }
 
-    if (caps_has_pixformat(caps, PIXFORMAT_JPEG))
+    if (!auto_rgb565 && caps_has_pixformat(caps, PIXFORMAT_JPEG))
     {
         pixformat = PIXFORMAT_JPEG;
         buffer_size = caps->max_buffer_size != 0
@@ -425,9 +449,16 @@ void take_photo(int argc, char **argv)
         goto close_camera;
     }
 
-    rt_kprintf("Capture: format=%s, framesize=%s, buffer=%u bytes @ %p\n",
-               pixformat == PIXFORMAT_JPEG ? "JPEG" : "RGB565",
-               argv[1], (unsigned int)buffer_size, buffer);
+    if (pixformat == PIXFORMAT_RGB565)
+    {
+        rt_kprintf("Capture: format=RGB565, framesize=%ux%u, buffer=%u bytes @ %p\n",
+                   width, height, (unsigned int)buffer_size, buffer);
+    }
+    else
+    {
+        rt_kprintf("Capture: format=JPEG, framesize=%s, buffer=%u bytes @ %p\n",
+                   argv[1], (unsigned int)buffer_size, buffer);
+    }
 
     for (int photo_idx = 0; photo_idx < count; photo_idx++)
     {

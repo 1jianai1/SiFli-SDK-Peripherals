@@ -57,6 +57,11 @@ def test_gc032a_serial_selects_only_serial():
     expect_value(config, "CAMERA_XCLK_FREQ", "6000000")
 
 
+def test_bf30a2_uses_24mhz_xclk():
+    config = load_config("SENSOR_USING_BF30A2")
+    expect_value(config, "CAMERA_XCLK_FREQ", "24000000")
+
+
 def test_serial_kconfig_does_not_select_spi():
     source = KCONFIG.read_text()
     serial_block = source.split("if CAMERA_USING_SERIAL", 1)[1].split(
@@ -78,5 +83,6 @@ if __name__ == "__main__":
     test_ov2640_selects_dvp()
     test_gc032a_dvp_selects_dvp()
     test_gc032a_serial_selects_only_serial()
+    test_bf30a2_uses_24mhz_xclk()
     test_serial_kconfig_does_not_select_spi()
     print("camera_kconfig_test: PASS")

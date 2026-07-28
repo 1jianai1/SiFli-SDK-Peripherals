@@ -5,12 +5,13 @@
 ## 概述
 
 该示例使用 `camera_handle.h` 采集单帧，并把图像保存到 SD 卡文件系统中的
-`/photo` 目录。OV2640 使用 JPEG，GC032A 2-bit serial 使用 RGB565/VGA。
+`/photo` 目录。OV2640 使用 JPEG；GC032A serial 和 BF30A2 使用 RGB565，
+分别输出 VGA 和 240×320 图像。
 
 ## 命令
 
 ```text
-msh> take_photo <framesize> <quality> <count>
+msh> take_photo <framesize|RGB565> <quality> <count>
 msh> take_photo_async <framesize> <quality>
 ```
 
@@ -19,6 +20,7 @@ msh> take_photo_async <framesize> <quality>
 在 menuconfig 的 `Camera drivers -> Sensor settings -> Active camera sensor`
 中选择摄像头；选择 GC032A 后还可以选择 `8-bit DVP` 或
 `2-bit serial`，构建系统只会编译选中的 sensor 和 data backend。
+BF30A2 使用固定的 RGB565/240×320 模式。
 
 - `take_photo` 会查询当前摄像头能力：支持 JPEG 时保存 `.jpg`，否则使用
   RGB565 并保存 `.ppm`。
@@ -46,7 +48,8 @@ CS。
 
 参数：
 
-- `framesize`：`QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA`
+- `framesize`：`QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA / 240X320`
+- `RGB565`：自动选择当前 RGB565 摄像头唯一支持的分辨率
 - `quality`：JPEG 质量，`0` 最好、`63` 压缩最强；RGB565 模式会忽略
   该参数
 - `count`：拍照次数，必须大于等于 `1`
@@ -55,6 +58,7 @@ CS。
 
 ```text
 msh> take_photo VGA 10 3
+msh> take_photo RGB565 0 1
 msh> take_photo_async VGA 10
 ```
 
@@ -78,7 +82,7 @@ msh> take_photo_async VGA 10
 /photo/photo_003.jpg
 ```
 
-GC032A RGB565 输出类似：
+GC032A 或 BF30A2 的 RGB565 输出类似：
 
 ```text
 /photo/photo_001.ppm

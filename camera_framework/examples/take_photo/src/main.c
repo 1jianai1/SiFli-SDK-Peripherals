@@ -1,7 +1,6 @@
 /******************************************************************************
  * @file    main.c
- * @brief   OV2640 take_photo example - capture RGB565 frames via the camera
- *          handle high-level API.
+ * @brief   Capture RGB565 frames through the camera handle API.
  *
  * The example uses the camera_handle.h API to grab one or more raw RGB565
  * frames into a PSRAM buffer. It then prints the buffer address and size so
@@ -14,8 +13,7 @@
  *   camera_capture_single()         - blocking single-frame grab (looped)
  *   camera_deinit()                 - close the device
  *
- * Note: low-level pin muxing for SCCB / DVP / XCLK is already performed by
- * the OV2640 driver itself, so this example does not call HAL_PIN_Set().
+ * Low-level SCCB, image-data and XCLK pin muxing is handled by the framework.
  *****************************************************************************/
 
 #include "rtthread.h"
@@ -91,6 +89,7 @@ static framesize_t format_string_to_framesize(const char *str)
     else if (strcmp(str, "HD") == 0)    return FRAMESIZE_HD;
     else if (strcmp(str, "SXGA") == 0)  return FRAMESIZE_SXGA;
     else if (strcmp(str, "UXGA") == 0)  return FRAMESIZE_UXGA;
+    else if (strcmp(str, "240X320") == 0) return FRAMESIZE_240X320;
     else                                return FRAMESIZE_INVALID;
 }
 
@@ -123,6 +122,7 @@ static int framesize_to_resolution(framesize_t size, uint16_t *width, uint16_t *
         case FRAMESIZE_HD:    *width = 1280; *height = 720;  break;
         case FRAMESIZE_SXGA:  *width = 1280; *height = 1024; break;
         case FRAMESIZE_UXGA:  *width = 1600; *height = 1200; break;
+        case FRAMESIZE_240X320: *width = 240; *height = 320; break;
         default:
             return -RT_EINVAL;
     }
@@ -195,20 +195,21 @@ static rt_bool_t caps_has_framesize(const camera_capabilities_t *caps, framesize
  *        PSRAM addresses so they can be exported with the SDK helper scripts.
  *
  * Usage:
- *   take_photo <framesize> <count>
+ *   take_photo <framesize|RGB565> <quality> <count>
  *
  *   framesize : QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA
+ *   quality   : ignored for RGB565; use 0
  *   count     : number of frames to capture (>= 1)
  *
  * Example:
- *   take_photo QVGA 1
+ *   take_photo RGB565 0 1
  *
  * After the capture finishes, the command prints the buffer base address,
  * the resolved width / height, and the byte count. The host can then dump
  * that memory region (e.g. via sftool / J-Link savebin) and feed it into
  * the SDK conversion script to render the raw RGB565 buffer as an image.
  *
- * @param argc is the argument count (3 including the command name).
+ * @param argc is the argument count (4 including the command name).
  * @param argv is the argument vector.
  */
 void take_photo(int argc, char **argv)
@@ -222,24 +223,42 @@ void take_photo(int argc, char **argv)
     uint16_t                       width  = 0;
     uint16_t                       height = 0;
     rt_size_t                      buffer_size;
+    framesize_t                    framesize;
+    rt_bool_t                      auto_rgb565;
+    int                            quality;
+    int                            count;
 
-    if (argc != 3)
+    if (argc != 4)
     {
-        rt_kprintf("Usage: take_photo <framesize> <count>\n");
-        rt_kprintf("Framesize options: QQVGA, QCIF, QVGA, CIF, VGA, SVGA, XGA, HD, SXGA, UXGA\n");
+        rt_kprintf("Usage: take_photo <framesize|RGB565> <quality> <count>\n");
+        rt_kprintf("Framesize options: QQVGA, QCIF, QVGA, CIF, VGA, SVGA, XGA, HD, SXGA, UXGA, 240X320\n");
+        rt_kprintf("RGB565 selects the camera's only supported framesize\n");
+        rt_kprintf("quality: ignored for RGB565; use 0\n");
         rt_kprintf("count: number of RGB565 frames to capture (>=1)\n");
-        rt_kprintf("Example: take_photo QVGA 1\n");
+        rt_kprintf("Example: take_photo RGB565 0 1\n");
         return;
     }
 
-    framesize_t framesize = format_string_to_framesize(argv[1]);
-    if (framesize == FRAMESIZE_INVALID)
+    auto_rgb565 = strcmp(argv[1], "RGB565") == 0;
+    framesize = FRAMESIZE_INVALID;
+    if (!auto_rgb565)
     {
-        rt_kprintf("Unsupported framesize: %s\n", argv[1]);
+        framesize = format_string_to_framesize(argv[1]);
+        if (framesize == FRAMESIZE_INVALID)
+        {
+            rt_kprintf("Unsupported framesize or format: %s\n", argv[1]);
+            return;
+        }
+    }
+
+    quality = atoi(argv[2]);
+    if (quality < 0 || quality > 63)
+    {
+        rt_kprintf("Quality must be between 0 and 63\n");
         return;
     }
 
-    int count = atoi(argv[2]);
+    count = atoi(argv[3]);
     if (count <= 0)
     {
         rt_kprintf("Count must be >= 1\n");
@@ -267,7 +286,16 @@ void take_photo(int argc, char **argv)
         rt_kprintf("Camera does not support PIXFORMAT_RGB565\n");
         goto close_camera;
     }
-    if (!caps_has_framesize(caps, framesize))
+    if (auto_rgb565)
+    {
+        if (caps->framesizes == RT_NULL || caps->num_framesizes != 1U)
+        {
+            rt_kprintf("RGB565 auto mode requires exactly one framesize\n");
+            goto close_camera;
+        }
+        framesize = caps->framesizes[0];
+    }
+    else if (!caps_has_framesize(caps, framesize))
     {
         rt_kprintf("Camera does not support requested framesize: %s\n", argv[1]);
         goto close_camera;
@@ -286,13 +314,11 @@ void take_photo(int argc, char **argv)
         goto close_camera;
     }
 
-    /* 2) Push RGB565 + framesize configuration. The handle layer inserts
-     *    a 500 ms AEC/AWB settle delay internally. The quality field is
-     *    unused for RGB565 but must still hold a valid JPEG-range value;
-     *    10 is used as a harmless placeholder. */
+    /* 2) Push RGB565 + framesize configuration. The quality field is
+     *    validated for command compatibility but ignored by RGB565 drivers. */
     cfg.pixformat = PIXFORMAT_RGB565;
     cfg.framesize = framesize;
-    cfg.quality   = 10;
+    cfg.quality   = (uint8_t)quality;
     status = camera_change_settings(camera_instance, &cfg);
     if (status != CAMERA_OK)
     {
@@ -348,7 +374,7 @@ close_camera:
         psram_heap_free(buffer);
     }
 }
-MSH_CMD_EXPORT(take_photo, Capture RGB565 frame(s) using ov2640 camera);
+MSH_CMD_EXPORT(take_photo, Capture RGB565 frame(s));
 
 /**
  * @brief Program entry point: initialize the PSRAM heap and idle, waiting
@@ -361,7 +387,7 @@ MSH_CMD_EXPORT(take_photo, Capture RGB565 frame(s) using ov2640 camera);
  */
 int main(void)
 {
-    rt_kprintf("OV2640 Camera Take Photo Example (RGB565)\n");
+    rt_kprintf("Camera Take Photo Example (RGB565)\n");
     psram_heap_init();
 
     while (1)

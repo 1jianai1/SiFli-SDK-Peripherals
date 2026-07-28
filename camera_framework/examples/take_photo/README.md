@@ -11,23 +11,25 @@
 ## 命令
 
 ```text
-msh> take_photo <framesize> <count>
+msh> take_photo <framesize|RGB565> <quality> <count>
 ```
 
 ## 选择摄像头
 
 在 menuconfig 的 `Camera drivers -> Sensor settings -> Active camera sensor`
-中选择 OV2640 或 GC032A。构建系统只会编译选中的传感器驱动。
+中选择 OV2640、GC032A 或 BF30A2。构建系统只会编译选中的传感器驱动。
 
 参数：
 
-- `framesize`：`QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA`
+- `framesize`：`QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA / 240X320`
+- `RGB565`：自动选择当前 RGB565 摄像头唯一支持的分辨率
+- `quality`：RGB565 模式忽略该参数，建议填 `0`
 - `count`：采集帧数，必须大于等于 `1`
 
 示例：
 
 ```text
-msh> take_photo QVGA 1
+msh> take_photo RGB565 0 1
 ```
 
 ## 调用流程
@@ -41,10 +43,10 @@ msh> take_photo QVGA 1
 ## 输出示例
 
 ```text
-RGB565 capture: 320x240, 153600 bytes/frame, buffer @ 0x20100000
-Frame 1 captured: 153600 bytes @ 0x20100000 (RGB565 320x240)
+RGB565 capture: 240x320, 153600 bytes/frame, buffer @ 0x6000001c
+Frame 1 captured: 153600 bytes @ 0x6000001c (RGB565 240x320)
 Export the buffer with the SDK script, e.g.:
-  sftool ... read_mem 0x20100000 153600 rgb565.bin
+  sftool ... read_mem 0x6000001c 153600 rgb565.bin
 ```
 
 ## 缓冲区说明
@@ -63,5 +65,5 @@ Export the buffer with the SDK script, e.g.:
 
 ## 备注
 
-- 引脚复用（SCCB / DVP / XCLK）由 camera framework 内部完成，应用层不需要调用 `HAL_PIN_Set()`
+- 引脚复用（SCCB / DVP 或 serial / XCLK）由 camera framework 内部完成，应用层不需要调用 `HAL_PIN_Set()`
 - 该示例适合验证 RGB565 单帧采集链路是否正常

@@ -11,24 +11,26 @@ Location: `examples/take_photo`
 ## Command
 
 ```text
-msh> take_photo <framesize> <count>
+msh> take_photo <framesize|RGB565> <quality> <count>
 ```
 
 ## Select a Sensor
 
-Select OV2640 or GC032A under
+Select OV2640, GC032A, or BF30A2 under
 `Camera drivers -> Sensor settings -> Active camera sensor` in menuconfig.
 Only the selected sensor driver is compiled.
 
 Parameters:
 
-- `framesize`: `QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA`
+- `framesize`: `QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA / 240X320`
+- `RGB565`: automatically selects the only framesize supported by the active RGB565 sensor
+- `quality`: ignored for RGB565; use `0`
 - `count`: number of frames to capture, must be `>= 1`
 
 Example:
 
 ```text
-msh> take_photo QVGA 1
+msh> take_photo RGB565 0 1
 ```
 
 ## Call Sequence
@@ -42,10 +44,10 @@ msh> take_photo QVGA 1
 ## Sample Output
 
 ```text
-RGB565 capture: 320x240, 153600 bytes/frame, buffer @ 0x20100000
-Frame 1 captured: 153600 bytes @ 0x20100000 (RGB565 320x240)
+RGB565 capture: 240x320, 153600 bytes/frame, buffer @ 0x6000001c
+Frame 1 captured: 153600 bytes @ 0x6000001c (RGB565 240x320)
 Export the buffer with the SDK script, e.g.:
-  sftool ... read_mem 0x20100000 153600 rgb565.bin
+  sftool ... read_mem 0x6000001c 153600 rgb565.bin
 ```
 
 ## Buffer Notes
@@ -64,5 +66,5 @@ The command prints the frame-buffer address and byte count. You can then use SDK
 
 ## Notes
 
-- SCCB / DVP / XCLK pin muxing is handled inside the camera framework; the application does not call `HAL_PIN_Set()`
+- SCCB / DVP or serial / XCLK pin muxing is handled inside the camera framework; the application does not call `HAL_PIN_Set()`
 - this example is mainly intended to validate the RGB565 single-shot capture path

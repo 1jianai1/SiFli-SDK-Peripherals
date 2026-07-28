@@ -5,13 +5,13 @@
 ## Overview
 
 This example uses `camera_handle.h` to capture single frames and save them
-under `/photo` on the SD card. OV2640 uses JPEG, while GC032A 2-bit serial uses
-RGB565/VGA.
+under `/photo` on the SD card. OV2640 uses JPEG. GC032A serial and BF30A2 use
+RGB565 at VGA and 240x320, respectively.
 
 ## Command
 
 ```text
-msh> take_photo <framesize> <quality> <count>
+msh> take_photo <framesize|RGB565> <quality> <count>
 msh> take_photo_async <framesize> <quality>
 ```
 
@@ -21,6 +21,7 @@ Select a sensor under
 `Camera drivers -> Sensor settings -> Active camera sensor` in menuconfig.
 After selecting GC032A, choose either `8-bit DVP` or `2-bit serial`. Only the
 selected sensor and data backend are compiled.
+BF30A2 uses a fixed RGB565/240x320 mode.
 
 - `take_photo` queries the selected sensor capabilities. It saves `.jpg` when
   JPEG is supported, otherwise it captures RGB565 and saves `.ppm`.
@@ -49,7 +50,8 @@ CS wire is required.
 
 Parameters:
 
-- `framesize`: `QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA`
+- `framesize`: `QQVGA / QCIF / QVGA / CIF / VGA / SVGA / XGA / HD / SXGA / UXGA / 240X320`
+- `RGB565`: automatically selects the only framesize supported by the active RGB565 sensor
 - `quality`: JPEG quality, `0` is best and `63` is the most compressed; it is
   ignored for RGB565 capture
 - `count`: number of photos to capture, must be `>= 1`
@@ -58,6 +60,7 @@ Example:
 
 ```text
 msh> take_photo VGA 10 3
+msh> take_photo RGB565 0 1
 msh> take_photo_async VGA 10
 ```
 
@@ -81,7 +84,7 @@ Results are saved like this:
 /photo/photo_003.jpg
 ```
 
-GC032A RGB565 output looks like this:
+GC032A or BF30A2 RGB565 output looks like this:
 
 ```text
 /photo/photo_001.ppm

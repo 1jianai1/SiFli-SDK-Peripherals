@@ -32,6 +32,7 @@ typedef struct
 {
     sccb_config_t sccb;
     camera_sensor_runtime_config_t runtime;
+    uint32_t xclk_frequency_hz;
 } gc032a_hw_config_t;
 
 static gc032a_device_t s_device;
@@ -102,6 +103,11 @@ static const gc032a_hw_config_t s_hw_config =
         .frame_timeout_ms = CAMERA_READ_TIMEOUT_MS,
         .default_config = &s_default_config,
     },
+#if defined(CAMERA_GC032A_INTERFACE_SERIAL_2BIT)
+    .xclk_frequency_hz = 6000000U,
+#else
+    .xclk_frequency_hz = 12000000U,
+#endif
 };
 
 static int gc032a_open(void);
@@ -345,7 +351,7 @@ static int gc032a_open(void)
     rt_memset(&s_device, 0, sizeof(s_device));
     if (CAMERA_XCLK_PIN >= 0 &&
         camera_xclk_start(CAMERA_XCLK_PIN,
-                          CAMERA_XCLK_FREQ) != CAMERA_XCLK_OK)
+                          s_hw_config.xclk_frequency_hz) != CAMERA_XCLK_OK)
     {
         LOG_E("XCLK start failed");
         return -RT_ERROR;

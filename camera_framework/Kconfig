@@ -205,29 +205,6 @@ if CAMERA_FRAMEWORK_ENABLE
               PAx pin index for XCLK output. Set to -1 to use an external
               sensor clock source.
 
-        choice
-            prompt "Sensor XCLK output frequency"
-            default CAMERA_XCLK_FREQ_24M if SENSOR_USING_BF30A2
-            default CAMERA_XCLK_FREQ_6M if CAMERA_GC032A_INTERFACE_SERIAL_2BIT
-            default CAMERA_XCLK_FREQ_12M
-            depends on CAMERA_XCLK_PIN != -1
-
-            config CAMERA_XCLK_FREQ_24M
-                bool "24 MHz"
-
-            config CAMERA_XCLK_FREQ_6M
-                bool "6 MHz"
-
-            config CAMERA_XCLK_FREQ_12M
-                bool "12 MHz"
-        endchoice
-
-        config CAMERA_XCLK_FREQ
-            int
-            default 24000000 if CAMERA_XCLK_FREQ_24M
-            default 6000000 if CAMERA_XCLK_FREQ_6M
-            default 12000000
-
     menu "BF30A2 settings"
         depends on SENSOR_USING_BF30A2
 

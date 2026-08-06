@@ -50,7 +50,7 @@ def test_bf30a2_uses_original_control_pins():
     assert "PAD_PA00 + CAMERA_SCCB_SCL_PIN" in source
     assert "PAD_PA00 + CAMERA_SCCB_SDA_PIN" in source
     assert "CAMERA_SCCB_I2C_BUS_NAME" in source
-    assert "camera_xclk_start(CAMERA_XCLK_PIN, CAMERA_XCLK_FREQ)" in source
+    assert "camera_xclk_start(CAMERA_XCLK_PIN, g_hw_config.xclk_frequency_hz)" in source
 
 
 def test_bf30a2_holds_spi_slave_selected():

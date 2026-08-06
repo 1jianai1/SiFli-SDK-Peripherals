@@ -68,6 +68,7 @@ static const camera_capture_config_t g_default_config = {
 typedef struct {
     sccb_config_t sccb;
     camera_sensor_runtime_config_t runtime;
+    uint32_t xclk_frequency_hz;
 } sensor_hw_config_t;
 
 static const sensor_hw_config_t g_hw_config = {
@@ -82,6 +83,7 @@ static const sensor_hw_config_t g_hw_config = {
         .frame_timeout_ms = CAMERA_READ_TIMEOUT_MS,
         .default_config = &g_default_config,
     },
+    .xclk_frequency_hz = 12000000U,
 };
 
 static int sensor_open(void);
@@ -527,7 +529,7 @@ static int sensor_open(void)
 
     if (CAMERA_XCLK_PIN >= 0 &&
         camera_xclk_start(CAMERA_XCLK_PIN,
-                          CAMERA_XCLK_FREQ) != CAMERA_XCLK_OK)
+                          g_hw_config.xclk_frequency_hz) != CAMERA_XCLK_OK)
     {
         LOG_E("XCLK start failed");
         s_active_device = RT_NULL;

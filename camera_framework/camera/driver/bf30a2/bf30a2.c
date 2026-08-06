@@ -92,6 +92,16 @@ typedef struct
 
 static bf30a2_device_t s_device;
 
+typedef struct
+{
+    uint32_t xclk_frequency_hz;
+} bf30a2_hw_config_t;
+
+static const bf30a2_hw_config_t g_hw_config =
+{
+    .xclk_frequency_hz = 24000000U,
+};
+
 static const pixformat_t s_pixformats[] =
 {
     PIXFORMAT_RGB565,
@@ -543,7 +553,7 @@ static int xclk_start(void)
     {
         return RT_EOK;
     }
-    return camera_xclk_start(CAMERA_XCLK_PIN, CAMERA_XCLK_FREQ) ==
+    return camera_xclk_start(CAMERA_XCLK_PIN, g_hw_config.xclk_frequency_hz) ==
            CAMERA_XCLK_OK ? RT_EOK : -RT_ERROR;
 }
 

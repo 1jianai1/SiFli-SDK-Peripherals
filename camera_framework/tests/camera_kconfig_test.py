@@ -7,6 +7,7 @@ import kconfiglib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 KCONFIG = ROOT / "Kconfig"
+DRIVER_ROOT = ROOT / "camera" / "driver"
 
 
 def load_config(sensor, interface=None):
@@ -39,7 +40,6 @@ def test_gc032a_dvp_selects_dvp():
     )
     expect_value(config, "CAMERA_USING_DVP", "y")
     expect_value(config, "CAMERA_USING_SERIAL", "n")
-    expect_value(config, "CAMERA_XCLK_FREQ", "12000000")
 
 
 def test_gc032a_serial_selects_only_serial():
@@ -54,12 +54,27 @@ def test_gc032a_serial_selects_only_serial():
     expect_value(config, "CAMERA_SCCB_SCL_PIN", "30")
     expect_value(config, "CAMERA_SCCB_SDA_PIN", "33")
     expect_value(config, "CAMERA_XCLK_PIN", "9")
-    expect_value(config, "CAMERA_XCLK_FREQ", "6000000")
 
 
 def test_bf30a2_uses_24mhz_xclk():
-    config = load_config("SENSOR_USING_BF30A2")
-    expect_value(config, "CAMERA_XCLK_FREQ", "24000000")
+    source = (DRIVER_ROOT / "bf30a2" / "bf30a2.c").read_text()
+    if ".xclk_frequency_hz = 24000000U" not in source:
+        raise AssertionError("BF30A2 must own its XCLK frequency")
+
+
+def test_xclk_frequency_is_driver_owned():
+    kconfig = KCONFIG.read_text()
+    if "CAMERA_XCLK_FREQ" in kconfig:
+        raise AssertionError("XCLK frequency must not be a global Kconfig option")
+
+    expected = {
+        "ov2640/ov2640.c": ".xclk_frequency_hz = 12000000U",
+        "gc032a/gc032a.c": ".xclk_frequency_hz = 6000000U",
+    }
+    for relative_path, field in expected.items():
+        source = (DRIVER_ROOT / relative_path).read_text()
+        if field not in source:
+            raise AssertionError(f"{relative_path}: missing driver-owned XCLK frequency")
 
 
 def test_serial_kconfig_does_not_select_spi():
@@ -84,5 +99,6 @@ if __name__ == "__main__":
     test_gc032a_dvp_selects_dvp()
     test_gc032a_serial_selects_only_serial()
     test_bf30a2_uses_24mhz_xclk()
+    test_xclk_frequency_is_driver_owned()
     test_serial_kconfig_does_not_select_spi()
     print("camera_kconfig_test: PASS")

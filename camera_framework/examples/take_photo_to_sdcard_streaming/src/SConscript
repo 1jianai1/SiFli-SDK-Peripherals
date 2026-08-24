@@ -7,7 +7,7 @@ camera_root = os.path.normpath(os.path.join(cwd, '../../../'))
 # Add source code
 src = Glob('*.c')
 inc = [
-    camera_root + '/camera/handle',
+    camera_root + '/core/handle',
 ]
 group = DefineGroup('Applications', src, depend=[''], CPPPATH=inc)
 

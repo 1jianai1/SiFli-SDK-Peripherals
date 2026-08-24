@@ -1,0 +1,13 @@
+config CUSTOM_MEM_MAP
+    bool
+    select custom_mem_map
+    default y
+
+config CAMERA_SW_ACPU_EXAMPLE
+    bool
+    default y
+    select CAMERA_SW_JPEG
+    select CAMERA_SW_JPEG_ENCODER
+    select CAMERA_SW_JPEG_DECODER
+
+rsource "../../../../software/Kconfig"

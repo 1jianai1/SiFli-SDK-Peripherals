@@ -38,6 +38,21 @@ if CAMERA_FRAMEWORK_ENABLE
         endchoice
 
         choice
+            prompt "OV2640 data interface"
+            depends on SENSOR_USING_OV2640
+            default CAMERA_OV2640_INTERFACE_DVP
+            help
+              Select whether OV2640 pixels arrive through the parallel DVP
+              bus or through an Arducam module's SPI FIFO.
+
+            config CAMERA_OV2640_INTERFACE_DVP
+                bool "8-bit DVP"
+
+            config CAMERA_OV2640_INTERFACE_ARDUCAM_FIFO
+                bool "Arducam SPI FIFO"
+        endchoice
+
+        choice
             prompt "GC032A output interface"
             depends on SENSOR_USING_GC032A
             default CAMERA_GC032A_INTERFACE_DVP_8BIT
@@ -84,6 +99,7 @@ if CAMERA_FRAMEWORK_ENABLE
 
         config CAMERA_SCCB_SCL_PIN
             int "SCCB SCL pin (PAx index)"
+            default 27 if CAMERA_OV2640_INTERFACE_ARDUCAM_FIFO
             default 30 if CAMERA_GC032A_INTERFACE_SERIAL_2BIT
             default 30 if SENSOR_USING_BF30A2
             default 76 if SOC_SF32LB56X
@@ -95,6 +111,7 @@ if CAMERA_FRAMEWORK_ENABLE
 
         config CAMERA_SCCB_SDA_PIN
             int "SCCB SDA pin (PAx index)"
+            default 20 if CAMERA_OV2640_INTERFACE_ARDUCAM_FIFO
             default 33 if CAMERA_GC032A_INTERFACE_SERIAL_2BIT
             default 33 if SENSOR_USING_BF30A2
             default 72 if SOC_SF32LB56X
@@ -110,17 +127,22 @@ if CAMERA_FRAMEWORK_ENABLE
 
         config CAMERA_USING_DVP
             bool
-            default y if SENSOR_USING_OV2640
+            default y if CAMERA_OV2640_INTERFACE_DVP
             default y if CAMERA_GC032A_INTERFACE_DVP_8BIT
 
         config CAMERA_USING_SERIAL
             bool
             default y if CAMERA_GC032A_INTERFACE_SERIAL_2BIT
 
+        config CAMERA_USING_ARDUCAM_FIFO
+            bool
+            default y if CAMERA_OV2640_INTERFACE_ARDUCAM_FIFO
+
         config CAMERA_DATA_BUS_ADAPTER_NAME
             string
             default "dvp" if CAMERA_USING_DVP
             default "camera_serial" if CAMERA_USING_SERIAL
+            default "arducam_fifo" if CAMERA_USING_ARDUCAM_FIFO
             help
               Internal helper symbol that resolves to the selected data bus
               adapter name for the active sensor interface.
@@ -196,6 +218,74 @@ if CAMERA_FRAMEWORK_ENABLE
 
         endif
 
+        if CAMERA_USING_ARDUCAM_FIFO
+
+        choice
+            prompt "Arducam FIFO SPI bus"
+            default CAMERA_ARDUCAM_SPI_BUS2
+
+            config CAMERA_ARDUCAM_SPI_BUS1
+                bool "SPI1"
+                select BSP_USING_SPI
+                select BSP_USING_SPI1
+                select BSP_SPI1_RX_USING_DMA
+                select BSP_SPI1_TX_USING_DMA
+
+            config CAMERA_ARDUCAM_SPI_BUS2
+                bool "SPI2"
+                select BSP_USING_SPI
+                select BSP_USING_SPI2
+                select BSP_SPI2_RX_USING_DMA
+                select BSP_SPI2_TX_USING_DMA
+        endchoice
+
+        config CAMERA_ARDUCAM_SPI_DEVICE_NAME
+            string "SPI device name"
+            default "arducam"
+            help
+              RT-Thread SPI device name reserved for the Arducam FIFO module.
+
+        config CAMERA_ARDUCAM_SPI_MAX_HZ
+            int "SPI clock frequency (Hz)"
+            default 8000000
+            range 1000000 24000000
+
+        config CAMERA_ARDUCAM_SPI_MOSI_PIN
+            int "SPI MOSI pin (PAx index)"
+            default 24 if CAMERA_ARDUCAM_SPI_BUS1
+            default 37 if CAMERA_ARDUCAM_SPI_BUS2
+            range 0 95
+
+        config CAMERA_ARDUCAM_SPI_MISO_PIN
+            int "SPI MISO pin (PAx index)"
+            default 25 if CAMERA_ARDUCAM_SPI_BUS1
+            default 38 if CAMERA_ARDUCAM_SPI_BUS2
+            range 0 95
+
+        config CAMERA_ARDUCAM_SPI_SCLK_PIN
+            int "SPI SCLK pin (PAx index)"
+            default 28 if CAMERA_ARDUCAM_SPI_BUS1
+            default 39 if CAMERA_ARDUCAM_SPI_BUS2
+            range 0 95
+
+        config CAMERA_ARDUCAM_SPI_CS_PIN
+            int "SPI CS pin (PAx index)"
+            default 29 if CAMERA_ARDUCAM_SPI_BUS1
+            default 40 if CAMERA_ARDUCAM_SPI_BUS2
+            range 0 95
+
+        config CAMERA_ARDUCAM_FIFO_SCRATCH_SIZE
+            int "FIFO transfer scratch size"
+            default 8192
+            range 1024 65536
+
+        config CAMERA_ARDUCAM_FIFO_WORKER_STACK_SIZE
+            int "FIFO worker stack size"
+            default 2048
+            range 1024 4096
+
+        endif
+
         config CAMERA_XCLK_PIN
             int "Sensor XCLK output pin (PAx index)"
             default 9 if CAMERA_GC032A_INTERFACE_SERIAL_2BIT
@@ -215,5 +305,7 @@ if CAMERA_FRAMEWORK_ENABLE
     endmenu
 
     endmenu
+
+    rsource "software/Kconfig"
 
 endif

@@ -1,0 +1,14 @@
+from building import *
+import os
+
+cwd = GetCurrentDir()
+group = []
+
+if GetDepend('CAMERA_SW_ISP'):
+    group.extend(SConscript(os.path.join(cwd, 'isp/SConscript'),
+                            variant_dir='isp', duplicate=0))
+if GetDepend('CAMERA_SW_JPEG'):
+    group.extend(SConscript(os.path.join(cwd, 'jpeg/SConscript'),
+                            variant_dir='jpeg', duplicate=0))
+
+Return('group')

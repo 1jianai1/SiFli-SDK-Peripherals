@@ -1,35 +1,41 @@
 from building import *
+import os
 
 # keep current working dir
 cwd = GetCurrentDir()
 # Collect common framework sources, one data backend and one sensor.
-src = (Glob('./camera/*.c') +
-       Glob('./camera/bus/control/*.c') +
-       ['./camera/bus/data/data_bus_adapter.c',
-        './camera/bus/data/camera_xclk.c',
-        './camera/bus/data/camera_xclk_calc.c'] +
-       Glob('./camera/driver/*.c') +
-       Glob('./camera/handle/*.c'))
-include = ['./camera', './camera/bus/control', './camera/driver', './camera/bus/data', './camera/handle']
+src = (Glob('./core/*.c') +
+       Glob('./core/bus/control/*.c') +
+       ['./core/bus/data/data_bus_adapter.c',
+        './core/bus/data/camera_xclk.c',
+        './core/bus/data/camera_xclk_calc.c'] +
+       Glob('./core/driver/*.c') +
+       Glob('./core/handle/*.c'))
+include = ['./core', './core/bus/control', './core/driver', './core/bus/data', './core/handle']
 
 if GetDepend('CAMERA_USING_DVP'):
-    src += ['./camera/bus/data/dvp.c']
+    src += ['./core/bus/data/dvp.c']
 elif GetDepend('CAMERA_USING_SERIAL'):
-    src += ['./camera/bus/data/camera_serial.c',
-            './camera/bus/data/camera_serial_decoder.c',
-            './camera/bus/data/camera_serial_hw.c',
-            './camera/bus/data/camera_serial_packer.c']
+    src += ['./core/bus/data/camera_serial.c',
+            './core/bus/data/camera_serial_decoder.c',
+            './core/bus/data/camera_serial_hw.c',
+            './core/bus/data/camera_serial_packer.c']
+elif GetDepend('CAMERA_USING_ARDUCAM_FIFO'):
+    src += ['./core/bus/data/arducam_fifo.c',
+            './core/bus/data/arducam_fifo_controller.c']
 
 if GetDepend('SENSOR_USING_OV2640'):
-    src += Glob('./camera/driver/ov2640/*.c')
-    include += ['./camera/driver/ov2640']
+    src += Glob('./core/driver/ov2640/*.c')
+    include += ['./core/driver/ov2640']
 elif GetDepend('SENSOR_USING_GC032A'):
-    src += Glob('./camera/driver/gc032a/*.c')
-    include += ['./camera/driver/gc032a']
+    src += Glob('./core/driver/gc032a/*.c')
+    include += ['./core/driver/gc032a']
 elif GetDepend('SENSOR_USING_BF30A2'):
-    src += Glob('./camera/driver/bf30a2/*.c')
-    include += ['./camera/driver/bf30a2']
+    src += Glob('./core/driver/bf30a2/*.c')
+    include += ['./core/driver/bf30a2']
 
 group = DefineGroup('Drivers', src, depend = ['CAMERA_FRAMEWORK_ENABLE'], CPPPATH = include, LIBPATH = include)
+group.extend(SConscript(os.path.join(cwd, 'software/SConscript'),
+                        variant_dir='software', duplicate=0))
 
 Return('group')
